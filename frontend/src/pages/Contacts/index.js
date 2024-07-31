@@ -37,6 +37,7 @@ import NewTicketModal from "../../components/NewTicketModal";
 import { SocketContext } from "../../context/Socket/SocketContext";
 
 import {CSVLink} from "react-csv";
+import ImportContactsModal from "../../components/ImportContactsModal";
 
 const reducer = (state, action) => {
   if (action.type === "LOAD_CONTACTS") {
@@ -108,6 +109,7 @@ const Contacts = () => {
   const [deletingContact, setDeletingContact] = useState(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [hasMore, setHasMore] = useState(false);
+  const [openModalImport, setOpenModalImport] = useState(false);
 
   const socketManager = useContext(SocketContext);
 
@@ -218,6 +220,10 @@ const Contacts = () => {
     }
   };
 
+  const handleOpenImportModal = (  ) => {
+    setOpenModalImport(true);
+  }
+
   const loadMore = () => {
     setPageNumber((prevState) => prevState + 1);
   };
@@ -230,8 +236,16 @@ const Contacts = () => {
     }
   };
 
+  const handleCloseModalImport = (  ) => {
+    setOpenModalImport(false);
+  }
+
   return (
     <MainContainer className={classes.mainContainer}>
+      <ImportContactsModal
+        open={openModalImport}
+        onClose={handleCloseModalImport}
+      />
       <NewTicketModal
         modalOpen={newTicketModalOpen}
         initialContact={contactTicket}
@@ -281,12 +295,19 @@ const Contacts = () => {
               ),
             }}
           />
-          <Button
+          {/*<Button
             variant="contained"
             color="primary"
             onClick={(e) => setConfirmOpen(true)}
           >
             {i18n.t("contacts.buttons.import")}
+          </Button>*/}
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={handleOpenImportModal}
+          >
+            Importar contatos
           </Button>
           <Button
             variant="contained"
@@ -295,10 +316,9 @@ const Contacts = () => {
           >
             {i18n.t("contacts.buttons.add")}
           </Button>
-
          <CSVLink style={{ textDecoration:'none'}} separator=";" filename={'contatos.csv'} data={contacts.map((contact) => ({ name: contact.name, number: contact.number, email: contact.email }))}>
           <Button	variant="contained" color="primary"> 
-          EXPORTAR CONTATOS 
+            EXPORTAR CONTATOS 
           </Button>
           </CSVLink>		  
 

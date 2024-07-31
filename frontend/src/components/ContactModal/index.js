@@ -22,6 +22,8 @@ import { i18n } from "../../translate/i18n";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 
+import InputMask from 'react-input-mask';
+
 const useStyles = makeStyles(theme => ({
 	root: {
 		display: "flex",
@@ -52,13 +54,21 @@ const useStyles = makeStyles(theme => ({
 	},
 }));
 
+const MaskedTextField = ({ field, form, ...props }) => {
+	return (
+	  <InputMask {...field} {...props}>
+		{(inputProps) => <TextField {...inputProps} />}
+	  </InputMask>
+	);
+};
+
 const ContactSchema = Yup.object().shape({
 	name: Yup.string()
-		.min(2, "Too Short!")
-		.max(50, "Too Long!")
+		.min(2, "Muito pequeno!")
+		.max(50, "Muito longo!")
 		.required("Required"),
-	number: Yup.string().min(8, "Too Short!").max(50, "Too Long!"),
-	email: Yup.string().email("Invalid email"),
+	number: Yup.string().min(8, "Muito curto!").max(50, "Muito longo!"),
+	email: Yup.string().email("Email inválido"),
 });
 
 const ContactModal = ({ open, onClose, contactId, initialValues, onSave }) => {
@@ -121,8 +131,8 @@ const ContactModal = ({ open, onClose, contactId, initialValues, onSave }) => {
 				handleClose();
 			}
 			toast.success(i18n.t("contactModal.success"));
-		} catch (err) {
-			toastError(err);
+		} catch (e) {	
+			toastError(e);
 		}
 	};
 
@@ -163,14 +173,20 @@ const ContactModal = ({ open, onClose, contactId, initialValues, onSave }) => {
 									className={classes.textField}
 								/>
 								<Field
-									as={TextField}
-									label={i18n.t("contactModal.form.number")}
 									name="number"
-									error={touched.number && Boolean(errors.number)}
-									helperText={touched.number && errors.number}
-									placeholder="5541998608485"
-									variant="outlined"
-									margin="dense"
+									render={({ field }) => (
+									<MaskedTextField
+										{...field}
+										label="Phone Number"
+										error={touched.number && Boolean(errors.number)}
+										helperText={touched.number && errors.number}
+										placeholder="(XX) XXXXX-XXXX"
+										variant="outlined"
+										margin="dense"
+										mask="(99) 99999-9999"
+										maskChar="_"
+									/>
+									)}
 								/>
 								<div>
 									<Field

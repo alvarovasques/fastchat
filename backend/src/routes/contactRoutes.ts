@@ -20,6 +20,8 @@ contactRoutes.get("/contacts/:contactId", isAuth, ContactController.show);
 
 contactRoutes.post("/contacts", isAuth, ContactController.store);
 
+contactRoutes.post("/contacts/upload", isAuth, ContactController.storeUpload);
+
 contactRoutes.put("/contacts/:contactId", isAuth, ContactController.update);
 
 contactRoutes.delete("/contacts/:contactId", isAuth, ContactController.remove);

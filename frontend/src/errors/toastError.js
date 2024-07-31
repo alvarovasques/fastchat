@@ -8,7 +8,7 @@ const toastError = err => {
         if (i18n.exists(`backendErrors.${errorMsg}`)) {
             console.error(`Error: ${i18n.t(`backendErrors.${errorMsg}`)}`);
             // Optionally log the error to an external service here
-            /*
+            
             toast.error(i18n.t(`backendErrors.${errorMsg}`), {
                 toastId: errorMsg,
                 autoClose: 2000,
@@ -19,12 +19,10 @@ const toastError = err => {
                 progress: undefined,
                 theme: "light",
             });
-            */
+            
             return;
         } else {
-            console.error(`Error: ${errorMsg}`);
-            // Optionally log the error to an external service here
-            /*
+            
             toast.error(errorMsg, {
                 toastId: errorMsg,
                 autoClose: 2000,
@@ -35,7 +33,7 @@ const toastError = err => {
                 progress: undefined,
                 theme: "light",
             });
-            */
+            
             return;
         }
     } if (isString(err)) {
