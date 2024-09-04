@@ -127,7 +127,7 @@ const ImportContactsModal = ( props ) => {
     }
 
     const handleDownloadModel = (  ) => {
-        window.location.href = `${process.env.REACT_APP_BACKEND_URL}/public/import-contatos.xlsx`;
+        window.location.href = `${window.location.protocol}//${window.location.host}/import-contatos.xlsx`;
     }
 
     return (
