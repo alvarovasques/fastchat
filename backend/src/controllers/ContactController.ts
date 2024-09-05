@@ -17,6 +17,7 @@ import SimpleListService, {
   SearchContactParams
 } from "../services/ContactServices/SimpleListService";
 import ContactCustomField from "../models/ContactCustomField";
+import { logger } from "../utils/logger";
 
 type IndexQuery = {
   searchParam: string;
@@ -95,9 +96,7 @@ export const storeUpload = async (req: Request, res: Response) : Promise<Respons
 
   const schema = Yup.object().shape({
     name: Yup.string().required(),
-    number: Yup.string()
-      .required()
-      .matches(/^\d+$/, "Invalid number format. Only numbers is allowed.")
+    number: Yup.string().required()
   });
 
   const promises = contacts.map(async contact => {
@@ -106,11 +105,11 @@ export const storeUpload = async (req: Request, res: Response) : Promise<Respons
 
     try{
 
-      const contact = await createNewContact( newContact, companyId, schema )
+      const contact = await createUploadedContact( newContact, companyId, schema )
       contactAdded.push( {contactName: contact.name, contactId: contact.id} );
 
     }catch(e){
-      errorBag.push({contactName: contact.Nome, error: e});
+      errorBag.push({contactName: contact.Nome, error: e || e.message});
     }
   });
 
@@ -231,4 +230,27 @@ const createNewContact = async ( newContact : ContactData, companyId : number, s
     });
 
     return contact;
+}
+
+const createUploadedContact = async ( newContact : ContactData, companyId : number, schema : any) => {
+
+  try{
+    await schema.validate(newContact);
+  }catch(err:any){
+    throw new AppError(err.message);
+  }
+
+  newContact.number = "55" + newContact.number.replace(/\D/g, "");
+  const contact = await CreateContactService({
+    ...newContact,
+    companyId
+  });
+
+  const io = getIO();
+    io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-contact`, {
+      action: "create",
+      contact
+    });
+
+  return contact;
 }
