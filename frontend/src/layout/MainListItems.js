@@ -42,7 +42,6 @@ import ToDoList from "../pages/ToDoList/";
 import toastError from "../errors/toastError";
 import { makeStyles } from "@material-ui/core/styles";
 import { AccountTree, AllInclusive, AttachFile, BlurCircular, Chat, DeviceHubOutlined, Schedule } from '@material-ui/icons';
-import AndroidIcon from '@material-ui/icons/Android';
 import usePlans from "../hooks/usePlans";
 import Typography from "@material-ui/core/Typography";
 import { ShapeLine } from "@mui/icons-material";
@@ -534,12 +533,6 @@ const MainListItems = (props) => {
               to="/settings"
               primary={i18n.t("mainDrawer.listItems.settings")}
               icon={<SettingsOutlinedIcon />}
-            />
-            
-            <ListItemLink
-              to="/ai-assistants"
-              primary="Assistentes IA"
-              icon={<AndroidIcon />}
             />
 			
 			

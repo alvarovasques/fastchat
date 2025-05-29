@@ -16,7 +16,6 @@ import {
 	Tooltip,
 	Typography,
 	CircularProgress,
-	Chip,
 } from "@material-ui/core";
 import {
 	Edit,
@@ -132,8 +131,8 @@ const Connections = () => {
 		}
 	};
 
-	const handleOpenWhatsAppModal = (type = "whatsapp") => {
-		setSelectedWhatsApp({ type });
+	const handleOpenWhatsAppModal = () => {
+		setSelectedWhatsApp(null);
 		setWhatsAppModalOpen(true);
 	};
 
@@ -313,7 +312,6 @@ const Connections = () => {
 				open={whatsAppModalOpen}
 				onClose={handleCloseWhatsAppModal}
 				whatsAppId={!qrModalOpen && selectedWhatsApp?.id}
-				initialType={selectedWhatsApp?.type || "whatsapp"}
 			/>
 			<MainHeader>
 				<Title>{i18n.t("connections.title")}</Title>
@@ -322,30 +320,13 @@ const Connections = () => {
 						role={user.profile}
 						perform="connections-page:addConnection"
 						yes={() => (
-							<>
-								<Button
-									variant="contained"
-									color="primary"
-									onClick={() => handleOpenWhatsAppModal("whatsapp")}
-									style={{ marginRight: 10 }}
-								>
-									{i18n.t("connections.buttons.add")} WhatsApp
-								</Button>
-								<Button
-									variant="contained"
-									style={{ backgroundColor: "#E1306C", color: "white", marginRight: 10 }}
-									onClick={() => handleOpenWhatsAppModal("instagram")}
-								>
-									{i18n.t("connections.buttons.add")} Instagram
-								</Button>
-								<Button
-									variant="contained"
-									style={{ backgroundColor: "#3b5998", color: "white" }}
-									onClick={() => handleOpenWhatsAppModal("facebook")}
-								>
-									{i18n.t("connections.buttons.add")} Facebook
-								</Button>
-							</>
+							<Button
+								variant="contained"
+								color="primary"
+								onClick={handleOpenWhatsAppModal}
+							>
+								{i18n.t("connections.buttons.add")}
+							</Button>
 						)}
 					/>
 				</MainHeaderButtonsWrapper>
@@ -394,24 +375,7 @@ const Connections = () => {
 								{whatsApps?.length > 0 &&
 									whatsApps.map(whatsApp => (
 										<TableRow key={whatsApp.id}>
-											<TableCell align="center">
-						{whatsApp.name}
-						{whatsApp.type && (
-							<Chip
-								size="small"
-								label={whatsApp.type}
-								style={{
-									backgroundColor: 
-										whatsApp.type === "instagram" ? "#E1306C" : 
-										whatsApp.type === "facebook" ? "#3b5998" : 
-										whatsApp.type === "messenger" ? "#0084FF" : 
-										"#25D366",
-									color: "white",
-									marginLeft: 8
-								}}
-							/>
-						)}
-					</TableCell>
+											<TableCell align="center">{whatsApp.name}</TableCell>
 											<TableCell align="center">
 												{renderStatusToolTips(whatsApp)}
 											</TableCell>

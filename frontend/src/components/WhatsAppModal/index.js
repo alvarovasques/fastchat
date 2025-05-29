@@ -62,7 +62,7 @@ const SessionSchema = Yup.object().shape({
     .required(i18n.t("whatsappModal.formErrors.name.required")),
 });
 
-const WhatsAppModal = ({ open, onClose, whatsAppId, initialType = "whatsapp" }) => {
+const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 
   const classes = useStyles();
   const initialState = {
@@ -80,8 +80,7 @@ const WhatsAppModal = ({ open, onClose, whatsAppId, initialType = "whatsapp" }) 
     expiresTicket: 0,
     timeUseBotQueues: 0,
     maxUseBotQueues: 3,
-    integration: null,
-    type: initialType
+    integration: null
   };
 
   const [whatsApp, setWhatsApp] = useState(initialState);
@@ -328,28 +327,6 @@ const WhatsAppModal = ({ open, onClose, whatsAppId, initialType = "whatsapp" }) 
                     variant="outlined"
                     margin="dense"
                   />
-                </div>
-                <div>
-                  <FormControl
-                    margin="dense"
-                    variant="outlined"
-                    fullWidth
-                  >
-                    <InputLabel>
-                      Tipo de Conexão
-                    </InputLabel>
-                    <Field
-                      as={Select}
-                      name="type"
-                      label="Tipo de Conexão"
-                      fullWidth
-                    >
-                      <MenuItem value="whatsapp">WhatsApp</MenuItem>
-                      <MenuItem value="instagram">Instagram</MenuItem>
-                      <MenuItem value="facebook">Facebook</MenuItem>
-                      <MenuItem value="messenger">Messenger</MenuItem>
-                    </Field>
-                  </FormControl>
                 </div>
                 <QueueSelect
                   selectedQueueIds={selectedQueueIds}

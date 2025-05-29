@@ -40,7 +40,6 @@ import ForgetPassword from "../pages/ForgetPassWord/"; // Reset PassWd
 import CampaignsPhrase from "../pages/CampaignsPhrase";
 import FlowBuilder from "../pages/FlowBuilder";
 import FlowBuilderConfig from "../pages/FlowBuilderConfig";
-import AIAssistants from "../pages/AIAssistants";
 
 const Routes = () => {
   const [showCampaigns, setShowCampaigns] = useState(false);
@@ -101,12 +100,7 @@ const Routes = () => {
                   component={QueueIntegration}
                   isPrivate
                 />
-                <Route
-                  exact
-                  path="/ai-assistants"
-                  component={AIAssistants}
-                  isPrivate
-                />
+
                 <Route
                   exact
                   path="/messages-api"

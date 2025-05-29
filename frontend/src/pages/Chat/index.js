@@ -1,199 +1,456 @@
-import React, { useState, useEffect } from "react";
-import { useParams } from "react-router-dom";
-import { makeStyles } from "@material-ui/core/styles";
-import Paper from "@material-ui/core/Paper";
-import Tabs from "@material-ui/core/Tabs";
-import Tab from "@material-ui/core/Tab";
-import TabPanel from "../../components/TabPanel";
-import ChatMessages from "./ChatMessages";
+import React, { useContext, useEffect, useRef, useState } from "react";
+
+import { useParams, useHistory } from "react-router-dom";
+
+import {
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Grid,
+  makeStyles,
+  Paper,
+  Tab,
+  Tabs,
+  TextField,
+} from "@material-ui/core";
 import ChatList from "./ChatList";
+import ChatMessages from "./ChatMessages";
+import { UsersFilter } from "../../components/UsersFilter";
+import api from "../../services/api";
+import { SocketContext } from "../../context/Socket/SocketContext";
+
+import { has, isObject } from "lodash";
+
+import { AuthContext } from "../../context/Auth/AuthContext";
+import withWidth, { isWidthUp } from "@material-ui/core/withWidth";
 import { i18n } from "../../translate/i18n";
-import NewChat from "./NewChat";
-import { Grid } from "@material-ui/core";
-import Hidden from "@material-ui/core/Hidden";
-import ChatInfo from "./ChatInfo";
-import AIAssistantChat from "./AIAssistantChat";
 
 const useStyles = makeStyles((theme) => ({
   mainContainer: {
     display: "flex",
-    flexDirection: "row",
+    flexDirection: "column",
     position: "relative",
     flex: 1,
     padding: theme.spacing(2),
-    height: "100%",
+    height: `calc(100% - 48px)`,
     overflowY: "hidden",
     border: "1px solid rgba(0, 0, 0, 0.12)",
   },
   gridContainer: {
     flex: 1,
-    padding: theme.spacing(1),
     height: "100%",
+    border: "1px solid rgba(0, 0, 0, 0.12)",
+    backgroundColor: theme.palette.dark,
   },
   gridItem: {
-    padding: theme.spacing(0),
-  },
-  chatPaper: {
-    display: "flex",
     height: "100%",
   },
-  contactsWrapper: {
-    display: "flex",
-    height: "100%",
-    flexDirection: "column",
-    overflowY: "hidden",
-    borderRight: "1px solid rgba(0, 0, 0, 0.12)",
+  gridItemTab: {
+    height: "92%",
+    width: "100%",
   },
-  contactsWrapperSmall: {
-    display: "flex",
-    height: "100%",
-    flexDirection: "column",
-    overflowY: "hidden",
-    borderRight: "0",
-  },
-  messagesWrapper: {
-    display: "flex",
-    height: "100%",
-    flexDirection: "column",
-    flexGrow: 1,
-    overflowY: "hidden",
-    borderRight: "1px solid rgba(0, 0, 0, 0.12)",
-  },
-  welcomeMsg: {
-    backgroundColor: "#eee",
-    display: "flex",
-    justifyContent: "space-evenly",
-    alignItems: "center",
-    height: "100%",
-    textAlign: "center",
-  },
-  chatInfoWrapper: {
-    display: "flex",
-    height: "100%",
-    flexDirection: "column",
-    overflow: "hidden",
-  },
-  chatContactsWrapper: {
-    display: "flex",
-    height: "100%",
-    flexDirection: "column",
-    overflow: "hidden",
-  },
-  tabRoot: {
-    borderBottom: "1px solid rgba(0, 0, 0, 0.12)",
+  btnContainer: {
+    textAlign: "right",
+    padding: 10,
   },
 }));
 
-const Chat = () => {
-  const classes = useStyles();
-  const { id } = useParams();
-  const [tab, setTab] = useState(0);
-  const [currentChat, setCurrentChat] = useState({});
-  const [loading, setLoading] = useState(false);
+export function ChatModal({
+  open,
+  chat,
+  type,
+  handleClose,
+  handleLoadNewChat,
+}) {
+  const [users, setUsers] = useState([]);
+  const [title, setTitle] = useState("");
 
   useEffect(() => {
-    if (id) {
-      setLoading(true);
-      const chat = {
-        id: id,
-      };
-      setCurrentChat(chat);
-      setLoading(false);
+    setTitle("");
+    setUsers([]);
+    if (type === "edit") {
+      const userList = chat.users.map((u) => ({
+        id: u.user.id,
+        name: u.user.name,
+      }));
+      setUsers(userList);
+      setTitle(chat.title);
     }
-  }, [id, setCurrentChat]);
+  }, [chat, open, type]);
 
-  const handleChangeTab = (event, newValue) => {
-    setTab(newValue);
+  const handleSave = async () => {
+    try {
+      if (!title) {
+        alert(i18n.t("chat.toasts.fillTitle"));
+        return;
+      }
+
+      if (!users || users.length === 0) {
+        alert(i18n.t("chat.toasts.fillUser"));
+        return;
+      }
+
+      if (type === "edit") {
+        await api.put(`/chats/${chat.id}`, {
+          users,
+          title,
+        });
+      } else {
+        const { data } = await api.post("/chats", {
+          users,
+          title,
+        });
+        handleLoadNewChat(data);
+      }
+      handleClose();
+    } catch (err) {}
+  };  
+
+  return (
+    <Dialog
+      open={open}
+      onClose={handleClose}
+      aria-labelledby="alert-dialog-title"
+      aria-describedby="alert-dialog-description"
+    >
+      <DialogTitle id="alert-dialog-title">{i18n.t("chat.modal.title")}</DialogTitle>
+      <DialogContent>
+        <Grid spacing={2} container>
+          <Grid xs={12} style={{ padding: 18 }} item>
+            <TextField
+              label={i18n.t("chat.modal.titleField")}
+              placeholder={i18n.t("chat.modal.titleField")}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              variant="outlined"
+              size="small"
+              fullWidth
+            />
+          </Grid>
+          <Grid xs={12} item>
+            <UsersFilter
+              onFiltered={(users) => setUsers(users)}
+              initialUsers={users}
+            />
+          </Grid>
+        </Grid>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={handleClose} color="primary">
+          {i18n.t("chat.buttons.close")}
+        </Button>
+        <Button onClick={handleSave} color="primary" variant="contained">
+          {i18n.t("chat.buttons.save")}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+function Chat(props) {
+  const classes = useStyles();
+  const { user } = useContext(AuthContext);
+  const history = useHistory();
+
+  const [showDialog, setShowDialog] = useState(false);
+  const [dialogType, setDialogType] = useState("new");
+  const [currentChat, setCurrentChat] = useState({});
+  const [chats, setChats] = useState([]);
+  const [chatsPageInfo, setChatsPageInfo] = useState({ hasMore: false });
+  const [messages, setMessages] = useState([]);
+  const [messagesPageInfo, setMessagesPageInfo] = useState({ hasMore: false });
+  const [messagesPage, setMessagesPage] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [tab, setTab] = useState(0);
+  const isMounted = useRef(true);
+  const scrollToBottomRef = useRef();
+  const { id } = useParams();
+
+  const socketManager = useContext(SocketContext);
+
+  useEffect(() => {
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isMounted.current) {
+      findChats().then((data) => {
+        const { records } = data;
+        if (records.length > 0) {
+          setChats(records);
+          setChatsPageInfo(data);
+
+          if (id && records.length) {
+            const chat = records.find((r) => r.uuid === id);
+            selectChat(chat);
+          }
+        }
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (isObject(currentChat) && has(currentChat, "id")) {
+      findMessages(currentChat.id).then(() => {
+        if (typeof scrollToBottomRef.current === "function") {
+          setTimeout(() => {
+            scrollToBottomRef.current();
+          }, 300);
+        }
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentChat]);
+
+  useEffect(() => {
+    const companyId = localStorage.getItem("companyId");
+    const socket = socketManager.getSocket(companyId);
+
+    socket.on(`company-${companyId}-chat-user-${user.id}`, (data) => {
+      if (data.action === "create") {
+        setChats((prev) => [data.record, ...prev]);
+      }
+      if (data.action === "update") {
+        const changedChats = chats.map((chat) => {
+          if (chat.id === data.record.id) {
+            setCurrentChat(data.record);
+            return {
+              ...data.record,
+            };
+          }
+          return chat;
+        });
+        setChats(changedChats);
+      }
+    });
+
+    socket.on(`company-${companyId}-chat`, (data) => {
+      if (data.action === "delete") {
+        const filteredChats = chats.filter((c) => c.id !== +data.id);
+        setChats(filteredChats);
+        setMessages([]);
+        setMessagesPage(1);
+        setMessagesPageInfo({ hasMore: false });
+        setCurrentChat({});
+        history.push("/chats");
+      }
+    });
+
+    if (isObject(currentChat) && has(currentChat, "id")) {
+      socket.on(`company-${companyId}-chat-${currentChat.id}`, (data) => {
+        if (data.action === "new-message") {
+          setMessages((prev) => [...prev, data.newMessage]);
+          const changedChats = chats.map((chat) => {
+            if (chat.id === data.newMessage.chatId) {
+              return {
+                ...data.chat,
+              };
+            }
+            return chat;
+          });
+          setChats(changedChats);
+          scrollToBottomRef.current();
+        }
+
+        if (data.action === "update") {
+          const changedChats = chats.map((chat) => {
+            if (chat.id === data.chat.id) {
+              return {
+                ...data.chat,
+              };
+            }
+            return chat;
+          });
+          setChats(changedChats);
+          scrollToBottomRef.current();
+        }
+      });
+    }
+
+    return () => {
+      socket.disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentChat, socketManager]);
+
+  const selectChat = (chat) => {
+    try {
+      setMessages([]);
+      setMessagesPage(1);
+      setCurrentChat(chat);
+      setTab(1);
+    } catch (err) {}
+  };
+
+  const sendMessage = async (contentMessage) => {
+    setLoading(true);
+    try {
+      await api.post(`/chats/${currentChat.id}/messages`, {
+        message: contentMessage,
+      });
+    } catch (err) {}
+    setLoading(false);
+  };
+
+  const deleteChat = async (chat) => {
+    try {
+      await api.delete(`/chats/${chat.id}`);
+    } catch (err) {}
+  };
+
+  const findMessages = async (chatId) => {
+    setLoading(true);
+    try {
+      const { data } = await api.get(
+        `/chats/${chatId}/messages?pageNumber=${messagesPage}`
+      );
+      setMessagesPage((prev) => prev + 1);
+      setMessagesPageInfo(data);
+      setMessages((prev) => [...data.records, ...prev]);
+    } catch (err) {}
+    setLoading(false);
+  };
+
+  const loadMoreMessages = async () => {
+    if (!loading) {
+      findMessages(currentChat.id);
+    }
+  };
+
+  const findChats = async () => {
+    try {
+      const { data } = await api.get("/chats");
+      return data;
+    } catch (err) {
+      console.log(err);
+    }
+  };
+
+  const renderGrid = () => {
+    return (
+      <Grid className={classes.gridContainer} container>
+        <Grid className={classes.gridItem} md={3} item>
+          
+            <div className={classes.btnContainer}>
+              <Button
+                onClick={() => {
+                  setDialogType("new");
+                  setShowDialog(true);
+                }}
+                color="primary"
+                variant="contained"
+              >
+                {i18n.t("chat.buttons.new")}
+              </Button>
+            </div>
+          
+          <ChatList
+            chats={chats}
+            pageInfo={chatsPageInfo}
+            loading={loading}
+            handleSelectChat={(chat) => selectChat(chat)}
+            handleDeleteChat={(chat) => deleteChat(chat)}
+            handleEditChat={() => {
+              setDialogType("edit");
+              setShowDialog(true);
+            }}
+          />
+        </Grid>
+        <Grid className={classes.gridItem} md={9} item>
+          {isObject(currentChat) && has(currentChat, "id") && (
+            <ChatMessages
+              chat={currentChat}
+              scrollToBottomRef={scrollToBottomRef}
+              pageInfo={messagesPageInfo}
+              messages={messages}
+              loading={loading}
+              handleSendMessage={sendMessage}
+              handleLoadMore={loadMoreMessages}
+            />
+          )}
+        </Grid>
+      </Grid>
+    );
+  };
+
+  const renderTab = () => {
+    return (
+      <Grid className={classes.gridContainer} container>
+        <Grid md={12} item>
+          <Tabs
+            value={tab}
+            indicatorColor="primary"
+            textColor="primary"
+            onChange={(e, v) => setTab(v)}
+            aria-label="disabled tabs example"
+          >
+            <Tab label={i18n.t("chat.chats")} />
+            <Tab label={i18n.t("chat.messages")} />
+          </Tabs>
+        </Grid>
+        {tab === 0 && (
+          <Grid className={classes.gridItemTab} md={12} item>
+            <div className={classes.btnContainer}>
+              <Button
+                onClick={() => setShowDialog(true)}
+                color="primary"
+                variant="contained"
+              >
+                {i18n.t("chat.buttons.newChat")}
+              </Button>
+            </div>
+            <ChatList
+              chats={chats}
+              pageInfo={chatsPageInfo}
+              loading={loading}
+              handleSelectChat={(chat) => selectChat(chat)}
+              handleDeleteChat={(chat) => deleteChat(chat)}
+            />
+          </Grid>
+        )}
+        {tab === 1 && (
+          <Grid className={classes.gridItemTab} md={12} item>
+            {isObject(currentChat) && has(currentChat, "id") && (
+              <ChatMessages
+                scrollToBottomRef={scrollToBottomRef}
+                pageInfo={messagesPageInfo}
+                messages={messages}
+                loading={loading}
+                handleSendMessage={sendMessage}
+                handleLoadMore={loadMoreMessages}
+              />
+            )}
+          </Grid>
+        )}
+      </Grid>
+    );
   };
 
   return (
-    <div className={classes.mainContainer}>
-      <Paper elevation={0} variant="outlined" className={classes.chatPaper}>
-        <Grid container spacing={0}>
-          <Grid item xs={4} md={4} className={classes.gridItem}>
-            <Hidden only={["xs", "sm"]}>
-              <div className={classes.contactsWrapper}>
-                <Tabs
-                  value={tab}
-                  onChange={handleChangeTab}
-                  indicatorColor="primary"
-                  textColor="primary"
-                  className={classes.tabRoot}
-                >
-                  <Tab label={i18n.t("chats.chats")} />
-                  <Tab label={i18n.t("chats.contacts")} />
-                  <Tab label="Assistente IA" />
-                </Tabs>
-                <TabPanel value={tab} index={0}>
-                  <ChatList setCurrentChat={setCurrentChat} />
-                </TabPanel>
-                <TabPanel value={tab} index={1}>
-                  <NewChat setCurrentChat={setCurrentChat} />
-                </TabPanel>
-                <TabPanel value={tab} index={2}>
-                  <AIAssistantChat />
-                </TabPanel>
-              </div>
-            </Hidden>
-            <Hidden only={["md", "lg", "xl"]}>
-              <div className={classes.contactsWrapperSmall}>
-                {currentChat.id === undefined ? (
-                  <>
-                    <Tabs
-                      value={tab}
-                      onChange={handleChangeTab}
-                      indicatorColor="primary"
-                      textColor="primary"
-                      className={classes.tabRoot}
-                    >
-                      <Tab label={i18n.t("chats.chats")} />
-                      <Tab label={i18n.t("chats.contacts")} />
-                      <Tab label="Assistente IA" />
-                    </Tabs>
-                    <TabPanel value={tab} index={0}>
-                      <ChatList setCurrentChat={setCurrentChat} />
-                    </TabPanel>
-                    <TabPanel value={tab} index={1}>
-                      <NewChat setCurrentChat={setCurrentChat} />
-                    </TabPanel>
-                    <TabPanel value={tab} index={2}>
-                      <AIAssistantChat />
-                    </TabPanel>
-                  </>
-                ) : (
-                  <div className={classes.messagesWrapper}>
-                    <ChatMessages chat={currentChat} />
-                  </div>
-                )}
-              </div>
-            </Hidden>
-          </Grid>
-          <Grid item xs={8} md={5} className={classes.gridItem}>
-            <Hidden only={["xs", "sm"]}>
-              <div className={classes.messagesWrapper}>
-                {currentChat.id !== undefined ? (
-                  <ChatMessages chat={currentChat} />
-                ) : (
-                  <div className={classes.welcomeMsg}>
-                    <span>{i18n.t("chats.noTicketMessage")}</span>
-                  </div>
-                )}
-              </div>
-            </Hidden>
-          </Grid>
-          <Grid item md={3} className={classes.gridItem}>
-            <Hidden only={["xs", "sm"]}>
-              <div className={classes.chatInfoWrapper}>
-                {currentChat.id !== undefined ? (
-                  <ChatInfo chat={currentChat} loading={loading} />
-                ) : null}
-              </div>
-            </Hidden>
-          </Grid>
-        </Grid>
+    <>
+      <ChatModal
+        type={dialogType}
+        open={showDialog}
+        chat={currentChat}
+        handleLoadNewChat={(data) => {
+          setMessages([]);
+          setMessagesPage(1);
+          setCurrentChat(data);
+          setTab(1);
+          history.push(`/chats/${data.uuid}`);
+        }}
+        handleClose={() => setShowDialog(false)}
+      />
+      <Paper className={classes.mainContainer}>
+        {isWidthUp("md", props.width) ? renderGrid() : renderTab()}
       </Paper>
-    </div>
+    </>
   );
-};
+}
 
-export default Chat;
+export default withWidth()(Chat);

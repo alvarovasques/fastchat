@@ -33,7 +33,6 @@ import queueIntegrationRoutes from "./queueIntegrationRoutes";
 import forgotsRoutes from "./forgotPasswordRoutes";
 import flowDefaultRoutes from "./flowDefaultRoutes";
 import flowBuilder from "./flowBuilderRoutes";
-import aiAssistantRoutes from "./aiAssistantRoutes";
 import flowCampaignRoutes from "./flowCampaignRoutes";
 const routes = Router();
 
@@ -68,7 +67,6 @@ routes.use(ticketTagRoutes);
 routes.use(filesRoutes);
 routes.use(promptRoutes);
 routes.use(queueIntegrationRoutes);
-routes.use(aiAssistantRoutes);
 routes.use(forgotsRoutes);
 
 routes.use(flowDefaultRoutes);
