@@ -122,6 +122,8 @@ const useStyles = makeStyles((theme) => ({
     [theme.breakpoints.down("sm")]: {
       width: "100%"
     },
+    backgroundColor: "#1976d2",
+    color: "white",
     ...theme.scrollbarStylesSoft
   },
   drawerPaperClose: {

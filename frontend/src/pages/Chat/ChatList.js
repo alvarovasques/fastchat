@@ -1,180 +1,273 @@
-import React, { useContext, useState } from "react";
+import React, { useState, useEffect, useContext } from "react";
+import { makeStyles } from "@material-ui/core/styles";
 import {
-  Chip,
-  IconButton,
   List,
   ListItem,
-  ListItemSecondaryAction,
   ListItemText,
-  makeStyles,
+  ListItemAvatar,
+  Avatar,
+  Typography,
+  CircularProgress,
+  Badge,
+  Divider,
 } from "@material-ui/core";
-
-import { useHistory, useParams } from "react-router-dom";
+import { format, parseISO, isToday } from "date-fns";
+import { ptBR } from "date-fns/locale";
 import { AuthContext } from "../../context/Auth/AuthContext";
-import { useDate } from "../../hooks/useDate";
-
-import DeleteIcon from "@material-ui/icons/Delete";
-import EditIcon from "@material-ui/icons/Edit";
-
-import ConfirmationModal from "../../components/ConfirmationModal";
+import { SocketContext } from "../../context/Socket/SocketContext";
 import api from "../../services/api";
-import { i18n } from "../../translate/i18n";
+import toastError from "../../errors/toastError";
 
 const useStyles = makeStyles((theme) => ({
-  mainContainer: {
+  root: {
     display: "flex",
     flexDirection: "column",
-    position: "relative",
-    flex: 1,
-    height: "calc(100% - 58px)",
-    overflow: "hidden",
-    borderRadius: 0,
-    backgroundColor: theme.palette.boxlist, //DARK MODE PLW DESIGN//
+    height: "100%",
   },
-  chatList: {
-    display: "flex",
-    flexDirection: "column",
-    position: "relative",
+  chatsList: {
     flex: 1,
-    overflowY: "scroll",
+    overflowY: "auto",
     ...theme.scrollbarStyles,
   },
-  listItem: {
+  chatItem: {
     cursor: "pointer",
+    "&:hover": {
+      backgroundColor: theme.palette.action.hover,
+    },
+  },
+  selectedChat: {
+    backgroundColor: theme.palette.action.selected,
+  },
+  chatInfo: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    width: "100%",
+  },
+  messagePreview: {
+    maxWidth: "70%",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  },
+  noChats: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    height: "100%",
+    padding: theme.spacing(2),
+    textAlign: "center",
+  },
+  unreadBadge: {
+    backgroundColor: theme.palette.primary.main,
+    color: "white",
   },
 }));
 
-export default function ChatList({
-  chats,
-  handleSelectChat,
-  handleDeleteChat,
-  handleEditChat,
-  pageInfo,
-  loading,
-}) {
+const ChatList = ({ setCurrentChat }) => {
   const classes = useStyles();
-  const history = useHistory();
   const { user } = useContext(AuthContext);
-  const { datetimeToClient } = useDate();
+  const socketManager = useContext(SocketContext);
+  const [chats, setChats] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedChatId, setSelectedChatId] = useState(null);
 
-  const [confirmationModal, setConfirmModalOpen] = useState(false);
-  const [selectedChat, setSelectedChat] = useState({});
-
-  const { id } = useParams();
-
-  const goToMessages = async (chat) => {
-    if (unreadMessages(chat) > 0) {
+  useEffect(() => {
+    const fetchChats = async () => {
       try {
-        await api.post(`/chats/${chat.id}/read`, { userId: user.id });
-      } catch (err) {}
-    }
-
-    if (id !== chat.uuid) {
-      history.push(`/chats/${chat.uuid}`);
-      handleSelectChat(chat);
-    }
-  };
-
-  const handleDelete = () => {
-    handleDeleteChat(selectedChat);
-  };
-
-  const unreadMessages = (chat) => {
-    const currentUser = chat.users.find((u) => u.userId === user.id);
-    return currentUser.unreads;
-  };
-
-  const getPrimaryText = (chat) => {
-    const mainText = chat.title;
-    const unreads = unreadMessages(chat);
-    return (
-      <>
-        {mainText}
-        {unreads > 0 && (
-          <Chip
-            size="small"
-            style={{ marginLeft: 5 }}
-            label={unreads}
-            color="secondary"
-          />
-        )}
-      </>
-    );
-  };
-
-  const getSecondaryText = (chat) => {
-    return chat.lastMessage !== ""
-      ? `${datetimeToClient(chat.updatedAt)}: ${chat.lastMessage}`
-      : "";
-  };
-
-  const getItemStyle = (chat) => {
-    return {
-      borderLeft: chat.uuid === id ? "6px solid #002d6e" : null,
-      backgroundColor: chat.uuid === id ? "theme.palette.chatlist" : null,
+        const { data } = await api.get("/chats");
+        setChats(data);
+      } catch (err) {
+        toastError(err);
+      } finally {
+        setLoading(false);
+      }
     };
+
+    fetchChats();
+  }, []);
+
+  useEffect(() => {
+    const companyId = localStorage.getItem("companyId");
+    const socket = socketManager.getSocket(companyId);
+
+    socket.on(`company-${companyId}-chat`, (data) => {
+      if (data.action === "new-message") {
+        updateChatLastMessage(data.chat);
+      }
+      if (data.action === "update") {
+        updateChat(data.chat);
+      }
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [socketManager]);
+
+  const updateChatLastMessage = (updatedChat) => {
+    setChats((prevChats) => {
+      const chatIndex = prevChats.findIndex((chat) => chat.id === updatedChat.id);
+      if (chatIndex !== -1) {
+        const newChats = [...prevChats];
+        newChats[chatIndex] = {
+          ...newChats[chatIndex],
+          lastMessage: updatedChat.lastMessage,
+          updatedAt: updatedChat.updatedAt,
+        };
+
+        // Update unread count for current user
+        if (newChats[chatIndex].users) {
+          newChats[chatIndex].users = newChats[chatIndex].users.map((chatUser) => {
+            if (chatUser.userId === user.id && chatUser.userId !== updatedChat.lastMessage.senderId) {
+              return {
+                ...chatUser,
+                unreads: chatUser.unreads + 1,
+              };
+            }
+            return chatUser;
+          });
+        }
+
+        // Sort chats by updatedAt
+        return newChats.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+      }
+      return [...prevChats, updatedChat].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+    });
   };
+
+  const updateChat = (updatedChat) => {
+    setChats((prevChats) => {
+      const chatIndex = prevChats.findIndex((chat) => chat.id === updatedChat.id);
+      if (chatIndex !== -1) {
+        const newChats = [...prevChats];
+        newChats[chatIndex] = updatedChat;
+        return newChats;
+      }
+      return prevChats;
+    });
+  };
+
+  const handleSelectChat = async (chat) => {
+    setSelectedChatId(chat.id);
+    setCurrentChat(chat);
+
+    // Mark messages as read
+    try {
+      await api.put(`/chats/${chat.id}/read`);
+      
+      // Update unread count locally
+      setChats((prevChats) => {
+        return prevChats.map((c) => {
+          if (c.id === chat.id) {
+            return {
+              ...c,
+              users: c.users.map((chatUser) => {
+                if (chatUser.userId === user.id) {
+                  return {
+                    ...chatUser,
+                    unreads: 0,
+                  };
+                }
+                return chatUser;
+              }),
+            };
+          }
+          return c;
+        });
+      });
+    } catch (err) {
+      toastError(err);
+    }
+  };
+
+  const getUnreadCount = (chat) => {
+    if (!chat.users) return 0;
+    const currentUser = chat.users.find((chatUser) => chatUser.userId === user.id);
+    return currentUser ? currentUser.unreads : 0;
+  };
+
+  const formatMessageDate = (dateString) => {
+    const date = parseISO(dateString);
+    if (isToday(date)) {
+      return format(date, "HH:mm");
+    }
+    return format(date, "dd/MM/yyyy", { locale: ptBR });
+  };
+
+  if (loading) {
+    return (
+      <div className={classes.noChats}>
+        <CircularProgress size={24} />
+      </div>
+    );
+  }
 
   return (
-    <>
-      <ConfirmationModal
-        title={i18n.t("chat.confirm.title")}
-        open={confirmationModal}
-        onClose={setConfirmModalOpen}
-        onConfirm={handleDelete}
-      >
-        {i18n.t("chat.confirm.message")}
-      </ConfirmationModal>
-      <div className={classes.mainContainer}>
-        <div className={classes.chatList}>
+    <div className={classes.root}>
+      <div className={classes.chatsList}>
+        {chats.length > 0 ? (
           <List>
-            {Array.isArray(chats) &&
-              chats.length > 0 &&
-              chats.map((chat, key) => (
-                <ListItem
-                  onClick={() => goToMessages(chat)}
-                  key={key}
-                  className={classes.listItem}
-                  style={getItemStyle(chat)}
-                  button
-                >
-                  <ListItemText
-                    primary={getPrimaryText(chat)}
-                    secondary={getSecondaryText(chat)}
-                  />
-                  {chat.ownerId === user.id && (
-                    <ListItemSecondaryAction>
-                      <IconButton
-                        onClick={() => {
-                          goToMessages(chat).then(() => {
-                            handleEditChat(chat);
-                          });
-                        }}
-                        edge="end"
-                        aria-label="delete"
-                        size="small"
-                        style={{ marginRight: 5 }}
+            {chats.map((chat) => {
+              const unreadCount = getUnreadCount(chat);
+              return (
+                <React.Fragment key={chat.id}>
+                  <ListItem
+                    className={`${classes.chatItem} ${
+                      selectedChatId === chat.id ? classes.selectedChat : ""
+                    }`}
+                    button
+                    onClick={() => handleSelectChat(chat)}
+                  >
+                    <ListItemAvatar>
+                      <Badge
+                        color="primary"
+                        badgeContent={unreadCount}
+                        invisible={unreadCount === 0}
+                        classes={{ badge: classes.unreadBadge }}
                       >
-                        <EditIcon />
-                      </IconButton>
-                      <IconButton
-                        onClick={() => {
-                          setSelectedChat(chat);
-                          setConfirmModalOpen(true);
-                        }}
-                        edge="end"
-                        aria-label="delete"
-                        size="small"
-                      >
-                        <DeleteIcon />
-                      </IconButton>
-                    </ListItemSecondaryAction>
-                  )}
-                </ListItem>
-              ))}
+                        <Avatar src={chat.avatar || ""}>
+                          {chat.title ? chat.title[0] : "?"}
+                        </Avatar>
+                      </Badge>
+                    </ListItemAvatar>
+                    <ListItemText
+                      primary={
+                        <div className={classes.chatInfo}>
+                          <Typography variant="subtitle2" noWrap>
+                            {chat.title || "Chat sem título"}
+                          </Typography>
+                          <Typography variant="caption" color="textSecondary">
+                            {chat.updatedAt && formatMessageDate(chat.updatedAt)}
+                          </Typography>
+                        </div>
+                      }
+                      secondary={
+                        <Typography
+                          variant="body2"
+                          color="textSecondary"
+                          className={classes.messagePreview}
+                        >
+                          {chat.lastMessage?.body || "Nenhuma mensagem"}
+                        </Typography>
+                      }
+                    />
+                  </ListItem>
+                  <Divider variant="inset" component="li" />
+                </React.Fragment>
+              );
+            })}
           </List>
-        </div>
+        ) : (
+          <div className={classes.noChats}>
+            <Typography variant="body2" color="textSecondary">
+              Nenhum chat disponível
+            </Typography>
+          </div>
+        )}
       </div>
-    </>
+    </div>
   );
-}
+};
+
+export default ChatList;

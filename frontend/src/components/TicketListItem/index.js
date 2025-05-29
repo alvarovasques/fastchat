@@ -5,7 +5,7 @@ import { parseISO, format, isSameDay } from "date-fns";
 import clsx from "clsx";
 
 import { makeStyles } from "@material-ui/core/styles";
-import { green } from "@material-ui/core/colors";
+import { green, blue, pink, purple } from "@material-ui/core/colors";
 import ListItem from "@material-ui/core/ListItem";
 import ListItemText from "@material-ui/core/ListItemText";
 import ListItemAvatar from "@material-ui/core/ListItemAvatar";
@@ -13,6 +13,11 @@ import Typography from "@material-ui/core/Typography";
 import Avatar from "@material-ui/core/Avatar";
 import Divider from "@material-ui/core/Divider";
 import Badge from "@material-ui/core/Badge";
+import Chip from "@material-ui/core/Chip";
+import WhatsAppIcon from "@material-ui/icons/WhatsApp";
+import FacebookIcon from "@material-ui/icons/Facebook";
+import InstagramIcon from "@material-ui/icons/Instagram";
+import MessageIcon from "@material-ui/icons/Message";
 
 import { i18n } from "../../translate/i18n";
 
@@ -79,6 +84,11 @@ const useStyles = makeStyles((theme) => ({
     alignSelf: "center",
     marginRight: 8,
     marginLeft: "auto",
+  },
+  
+  connectionType: {
+    marginRight: 5,
+    alignSelf: "center",
   },
 
   badgeStyle: {
@@ -168,14 +178,56 @@ const TicketListItem = ({ ticket }) => {
           disableTypography
           primary={
             <span className={classes.contactNameWrapper}>
-              <Typography
-                noWrap
-                component="span"
-                variant="body2"
-                color="textPrimary"
-              >
-                {ticket.contact.name}
-              </Typography>
+              <div style={{ display: "flex", alignItems: "center" }}>
+                {ticket.whatsapp?.type === "instagram" && (
+                  <Chip
+                    size="small"
+                    icon={<InstagramIcon style={{ color: pink[500] }} />}
+                    label="Instagram"
+                    variant="outlined"
+                    style={{ backgroundColor: pink[50], marginRight: 5 }}
+                    className={classes.connectionType}
+                  />
+                )}
+                {ticket.whatsapp?.type === "facebook" && (
+                  <Chip
+                    size="small"
+                    icon={<FacebookIcon style={{ color: blue[500] }} />}
+                    label="Facebook"
+                    variant="outlined"
+                    style={{ backgroundColor: blue[50], marginRight: 5 }}
+                    className={classes.connectionType}
+                  />
+                )}
+                {ticket.whatsapp?.type === "messenger" && (
+                  <Chip
+                    size="small"
+                    icon={<MessageIcon style={{ color: purple[500] }} />}
+                    label="Messenger"
+                    variant="outlined"
+                    style={{ backgroundColor: purple[50], marginRight: 5 }}
+                    className={classes.connectionType}
+                  />
+                )}
+                {(ticket.whatsapp?.type === "whatsapp" || !ticket.whatsapp?.type) && (
+                  <Chip
+                    size="small"
+                    icon={<WhatsAppIcon style={{ color: green[500] }} />}
+                    label="WhatsApp"
+                    variant="outlined"
+                    style={{ backgroundColor: green[50], marginRight: 5 }}
+                    className={classes.connectionType}
+                  />
+                )}
+                <Typography
+                  noWrap
+                  component="span"
+                  variant="body2"
+                  color="textPrimary"
+                >
+                  {ticket.contact.name}
+                </Typography>
+              </div>
               {ticket.status === "closed" && (
                 <Badge
                   className={classes.closedBadge}
