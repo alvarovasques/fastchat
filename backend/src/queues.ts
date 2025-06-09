@@ -520,55 +520,129 @@ function calculateDelay(index, baseDelay, longerIntervalAfter, greaterInterval, 
   }
 }
 
+async function getCampaignContacts(campaignId: number, batchSize: number = 100) {
+  return await ContactListItem.findAll({
+    attributes: ['id', 'name', 'number', 'email'],
+    include: [{
+      model: ContactList,
+      as: 'contactList',
+      attributes: [],
+      where: {
+        '$contactList.Campaign.id$': campaignId
+      }
+    }],
+    limit: batchSize
+  });
+}
+
 async function handleProcessCampaign(job) {
+  const startTime = Date.now();
   logger.info("[🏁] - Iniciou o processamento da campanha de ID: " + job.data.id);
+  
   try {
     const { id }: ProcessCampaignData = job.data;
-    const campaign = await getCampaign(id);
-    const settings = await getSettings(campaign);
-    if (campaign) {
+    
+    // Carrega apenas dados essenciais da campanha
+    const campaign = await Campaign.findByPk(id, {
+      attributes: ['id', 'companyId', 'scheduledAt', 'status'],
+      include: [{
+        model: Whatsapp,
+        as: 'whatsapp',
+        attributes: ['id', 'name']
+      }]
+    });
 
-      logger.info("[🚩] - Localizando e configurando a campanha");
-
-      const { contacts } = campaign.contactList;
-      if (isArray(contacts)) {
-
-        logger.info("[📌] - Quantidade de contatos a serem enviados: " + contacts.length);
-
-        const contactData = contacts.map(contact => ({
-          contactId: contact.id,
-          campaignId: campaign.id,
-          variables: settings.variables,
-        }));
-
-        // const baseDelay = job.data.delay || 0;
-        const longerIntervalAfter = parseToMilliseconds(settings.longerIntervalAfter);
-        const greaterInterval = parseToMilliseconds(settings.greaterInterval);
-        const messageInterval = settings.messageInterval;
-
-        let baseDelay = campaign.scheduledAt;
-
-        const queuePromises = [];
-        for (let i = 0; i < contactData.length; i++) {
-
-          baseDelay = addSeconds(baseDelay, i > longerIntervalAfter ? greaterInterval : messageInterval);
-
-          const { contactId, campaignId, variables } = contactData[i];
-          const delay = calculateDelay(i, baseDelay, longerIntervalAfter, greaterInterval, messageInterval);
-          const queuePromise = campaignQueue.add(
-            "PrepareContact",
-            { contactId, campaignId, variables, delay },
-            { removeOnComplete: true }
-          );
-          queuePromises.push(queuePromise);
-          logger.info("[🚀] - Cliente de ID: " + contactData[i].contactId + " da campanha de ID: " + contactData[i].campaignId + " com delay: " + delay);
-        }
-        await Promise.all(queuePromises);
-        await campaign.update({ status: "EM_ANDAMENTO" });
-      }
+    if (!campaign) {
+      logger.error(`[🚨] - Campanha não encontrada: ${id}`);
+      return;
     }
+
+    const settings = await getSettings(campaign);
+    const batchSize = process.env.CAMPAIGN_BATCH_SIZE ? parseInt(process.env.CAMPAIGN_BATCH_SIZE) : 100;
+    const rateLimit = process.env.CAMPAIGN_RATE_LIMIT ? parseInt(process.env.CAMPAIGN_RATE_LIMIT) : 1000;
+    let offset = 0;
+    let hasMoreContacts = true;
+    let totalProcessed = 0;
+
+    while (hasMoreContacts) {
+      const contacts = await getCampaignContacts(id, batchSize);
+      
+      if (contacts.length === 0) {
+        hasMoreContacts = false;
+        continue;
+      }
+
+      const baseDelay = campaign.scheduledAt;
+      const longerIntervalAfter = parseToMilliseconds(settings.longerIntervalAfter);
+      const greaterInterval = parseToMilliseconds(settings.greaterInterval);
+      const messageInterval = settings.messageInterval;
+
+      const queuePromises = contacts.map((contact, index) => {
+        const delay = calculateDelay(
+          offset + index,
+          baseDelay,
+          longerIntervalAfter,
+          greaterInterval,
+          messageInterval
+        );
+
+        return campaignQueue.add(
+          "PrepareContact",
+          {
+            contactId: contact.id,
+            campaignId: campaign.id,
+            variables: settings.variables,
+            delay
+          },
+          { 
+            removeOnComplete: true,
+            attempts: 3,
+            backoff: {
+              type: 'exponential',
+              delay: 1000
+            }
+          }
+        );
+      });
+
+      await Promise.all(queuePromises);
+      totalProcessed += contacts.length;
+      offset += contacts.length;
+
+      // Log do progresso
+      logger.info(`[📊] - Progresso da campanha ${id}:`, {
+        processed: totalProcessed,
+        currentBatch: contacts.length,
+        memoryUsage: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + 'MB'
+      });
+
+      // Pausa entre batches para não sobrecarregar o sistema
+      await new Promise(resolve => setTimeout(resolve, rateLimit));
+    }
+
+    await campaign.update({ status: "EM_ANDAMENTO" });
+    
+    const duration = Date.now() - startTime;
+    logger.info(`[✅] - Campanha ${id} processada com sucesso:`, {
+      totalContacts: totalProcessed,
+      duration: `${Math.round(duration / 1000)}s`,
+      memoryUsage: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + 'MB'
+    });
+
   } catch (err: any) {
     Sentry.captureException(err);
+    logger.error(`[🚨] - Erro ao processar campanha ${job.data.id}:`, {
+      error: err.message,
+      stack: err.stack,
+      memoryUsage: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + 'MB'
+    });
+
+    // Tenta reprocessar o job em caso de erro
+    if (job.attemptsMade < 3) {
+      await job.retry();
+    } else {
+      logger.error(`[🚨] - Job falhou após 3 tentativas: ${job.data.id}`);
+    }
   }
 }
 
