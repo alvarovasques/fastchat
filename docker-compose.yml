@@ -26,11 +26,12 @@ services:
 
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: frontend/Dockerfile
       args:
         - REACT_APP_BACKEND_URL=${BACKEND_URL}
         - REACT_APP_HOURS_CLOSE_TICKETS_AUTO=24
+        - STACK_NAME=${STACK_NAME}
     ports:
       - "${FRONTEND_PORT:-3001}:3001"
     depends_on:
