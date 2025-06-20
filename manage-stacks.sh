@@ -14,7 +14,7 @@ INSTANCES_FILE="instances.json"
 init_instances_file() {
     if [[ ! -f "$INSTANCES_FILE" ]]; then
         echo '{"instances": {}}' > "$INSTANCES_FILE"
-        echo -e "${GREEN}Arquivo de instâncias criado: $INSTANCES_FILE${NC}"
+        echo -e "${GREEN}📄 Arquivo de instâncias criado: $INSTANCES_FILE${NC}"
     fi
 }
 
@@ -56,7 +56,7 @@ save_instance() {
                "status": "running"
            }' "$INSTANCES_FILE" > "${INSTANCES_FILE}.tmp" && mv "${INSTANCES_FILE}.tmp" "$INSTANCES_FILE"
     else
-        echo -e "${YELLOW}Aviso: jq não encontrado. Instância não foi salva no arquivo JSON.${NC}"
+        echo -e "${YELLOW}⚠️  Aviso: jq não encontrado. Instância não foi salva no arquivo JSON.${NC}"
     fi
 }
 
@@ -97,15 +97,15 @@ update_instance() {
 # Função para listar todas as instâncias
 list_instances() {
     if [[ ! -f "$INSTANCES_FILE" ]]; then
-        echo -e "${YELLOW}Nenhuma instância encontrada.${NC}"
+        echo -e "${YELLOW}📭 Nenhuma instância encontrada.${NC}"
         return
     fi
     
     if command -v jq &> /dev/null; then
-        echo -e "${YELLOW}Instâncias salvas:${NC}\n"
+        echo -e "${YELLOW}📋 Instâncias salvas:${NC}\n"
         jq -r '.instances | to_entries[] | "Nome: \(.key)\n  Criada: \(.value.created_at)\n  Atualizada: \(.value.updated_at)\n  Backend: \(.value.config.backend_url)\n  Frontend: \(.value.config.frontend_url)\n  CPU: \(.value.config.total_cpu) cores\n  Memória: \(.value.config.total_memory)MB\n  Status: \(.value.status)\n"' "$INSTANCES_FILE"
     else
-        echo -e "${YELLOW}jq não encontrado. Não é possível listar instâncias.${NC}"
+        echo -e "${YELLOW}⚠️  jq não encontrado. Não é possível listar instâncias.${NC}"
     fi
 }
 
@@ -115,9 +115,9 @@ remove_instance() {
     
     if command -v jq &> /dev/null; then
         jq --arg name "$stack_name" 'del(.instances[$name])' "$INSTANCES_FILE" > "${INSTANCES_FILE}.tmp" && mv "${INSTANCES_FILE}.tmp" "$INSTANCES_FILE"
-        echo -e "${GREEN}Instância $stack_name removida do arquivo.${NC}"
+        echo -e "${GREEN}🗑️  Instância $stack_name removida do arquivo.${NC}"
     else
-        echo -e "${YELLOW}jq não encontrado. Instância não foi removida do arquivo.${NC}"
+        echo -e "${YELLOW}⚠️  jq não encontrado. Instância não foi removida do arquivo.${NC}"
     fi
 }
 
@@ -127,25 +127,25 @@ validate_instance() {
     local command_name=$2
     
     if [[ ! -f "$INSTANCES_FILE" ]]; then
-        echo -e "${RED}Erro: Arquivo de instâncias não encontrado.${NC}"
-        echo -e "${YELLOW}Use 'up' para criar uma nova instância primeiro.${NC}"
+        echo -e "${RED}❌ Erro: Arquivo de instâncias não encontrado.${NC}"
+        echo -e "${YELLOW}💡 Use 'up' para criar uma nova instância primeiro.${NC}"
         exit 1
     fi
     
     if command -v jq &> /dev/null; then
         local exists=$(jq -r ".instances[\"$stack_name\"]" "$INSTANCES_FILE" 2>/dev/null)
         if [[ "$exists" == "null" ]]; then
-            echo -e "${RED}Erro: Instância '$stack_name' não encontrada no banco de dados.${NC}"
-            echo -e "\n${YELLOW}Instâncias disponíveis:${NC}"
+            echo -e "${RED}❌ Erro: Instância '$stack_name' não encontrada no banco de dados.${NC}"
+            echo -e "\n${YELLOW}📋 Instâncias disponíveis:${NC}"
             list_instances
-            echo -e "\n${YELLOW}Comandos disponíveis:${NC}"
-            echo -e "  ${GREEN}./manage-stacks.sh up -n $stack_name${NC}     # Criar nova instância"
-            echo -e "  ${GREEN}./manage-stacks.sh instances${NC}              # Ver todas as instâncias"
-            echo -e "  ${GREEN}./manage-stacks.sh list${NC}                   # Ver stacks Docker"
+            echo -e "\n${YELLOW}🔧 Comandos disponíveis:${NC}"
+            echo -e "  🚀 ./manage-stacks.sh up -n $stack_name${NC}     # 🚀 Criar nova instância"
+            echo -e "  📋 ./manage-stacks.sh instances${NC}              # 📋 Ver todas as instâncias"
+            echo -e "  📊 ./manage-stacks.sh list${NC}                   # 📊 Ver stacks Docker"
             exit 1
         fi
     else
-        echo -e "${YELLOW}Aviso: jq não encontrado. Validação de instância desabilitada.${NC}"
+        echo -e "${YELLOW}⚠️  Aviso: jq não encontrado. Validação de instância desabilitada.${NC}"
     fi
 }
 
@@ -186,8 +186,8 @@ rollback_stack() {
 
 # Função para mostrar ajuda
 show_help() {
-    echo -e "${YELLOW}Gerenciador de Stacks Docker${NC}"
-    echo -e "\n${GREEN}Uso:${NC}"
+    echo -e "${YELLOW}🐳 Gerenciador de Stacks Docker${NC}"
+    echo -e "\n${GREEN}📖 Uso:${NC}"
     echo -e "  $0 up [OPÇÕES]"
     echo -e "  $0 down [OPÇÕES]"
     echo -e "  $0 update [OPÇÕES]"
@@ -196,16 +196,16 @@ show_help() {
     echo -e "  $0 logs [OPÇÕES]"
     echo -e "  $0 status [OPÇÕES]"
     echo -e "  $0 restart [OPÇÕES]"
-    echo -e "\n${GREEN}Comandos:${NC}"
-    echo -e "  up        - Inicia uma nova stack (salva configuração)"
-    echo -e "  down      - Para uma stack"
-    echo -e "  update    - Atualiza e rebuilda imagens Docker (preserva configuração)"
-    echo -e "  list      - Lista todas as stacks Docker"
-    echo -e "  instances - Lista todas as instâncias salvas"
-    echo -e "  logs      - Mostra logs de uma stack"
-    echo -e "  status    - Mostra status de uma stack"
-    echo -e "  restart   - Reinicia uma stack"
-    echo -e "\n${GREEN}Opções para 'up':${NC}"
+    echo -e "\n${GREEN}🔧 Comandos:${NC}"
+    echo -e "  🚀 up        - Inicia uma nova stack (salva configuração)"
+    echo -e "  🛑 down      - Para uma stack"
+    echo -e "  🔄 update    - Atualiza e rebuilda imagens Docker (preserva configuração)"
+    echo -e "  📊 list      - Lista todas as stacks Docker"
+    echo -e "  📋 instances - Lista todas as instâncias salvas"
+    echo -e "  📝 logs      - Mostra logs de uma stack"
+    echo -e "  📈 status    - Mostra status de uma stack"
+    echo -e "  🔄 restart   - Reinicia uma stack"
+    echo -e "\n${GREEN}⚙️  Opções para 'up':${NC}"
     echo -e "  -n, --name STACK_NAME     Nome da stack (padrão: codatende)"
     echo -e "  -b, --backend-port PORT   Porta do backend (padrão: 3000)"
     echo -e "  -f, --frontend-port PORT  Porta do frontend (padrão: 3001)"
@@ -213,32 +213,32 @@ show_help() {
     echo -e "  -w, --frontend-url URL    URL do frontend (padrão: http://localhost:PORT)"
     echo -e "  -c, --cpu CORES           Total de cores CPU (padrão: 2)"
     echo -e "  -m, --memory MB           Total de memória em MB (padrão: 2048)"
-    echo -e "\n${GREEN}Opções para outros comandos:${NC}"
+    echo -e "\n${GREEN}⚙️  Opções para outros comandos:${NC}"
     echo -e "  -n, --name STACK_NAME     Nome da stack (padrão: codatende)"
-    echo -e "\n${GREEN}Exemplos:${NC}"
-    echo -e "  # Criar nova instância (salva configuração automaticamente)"
+    echo -e "\n${GREEN}💡 Exemplos:${NC}"
+    echo -e "  # 🚀 Criar nova instância (salva configuração automaticamente)"
     echo -e "  $0 up -n codatende1 -b 3000 -f 3001"
     echo -e "  $0 up --name codatende2 --backend-port 4000 --frontend-port 4001"
     echo -e "  $0 up -n codatende3 -b 5000 -f 5001 -c 2 -m 2048"
     echo -e "  $0 up -n codatende4 -u https://api.exemplo.com -w https://app.exemplo.com"
-    echo -e "\n  # Atualizar instância (usa configuração salva)"
+    echo -e "\n  # 🔄 Atualizar instância (usa configuração salva)"
     echo -e "  $0 update -n codatende1"
     echo -e "  $0 update codatende1"
-    echo -e "\n  # Atualizar com novos parâmetros (atualiza configuração)"
+    echo -e "\n  # 🔄 Atualizar com novos parâmetros (atualiza configuração)"
     echo -e "  $0 update -n codatende1 -c 4 -m 4096"
-    echo -e "\n  # Gerenciar instâncias"
-    echo -e "  $0 instances                    # Lista instâncias salvas"
-    echo -e "  $0 down -n codatende1          # Para e remove do arquivo"
+    echo -e "\n  # 🛠️  Gerenciar instâncias"
+    echo -e "  $0 instances                    # 📋 Lista instâncias salvas"
+    echo -e "  $0 down -n codatende1          # 🛑 Para e remove do arquivo"
     echo -e "  $0 logs -n codatende1"
     echo -e "  $0 status -n codatende1"
     echo -e "  $0 restart -n codatende1"
-    echo -e "\n${YELLOW}Formato alternativo (compatibilidade):${NC}"
+    echo -e "\n${YELLOW}🔄 Formato alternativo (compatibilidade):${NC}"
     echo -e "  $0 up codatende1 3000 3001"
     echo -e "  $0 down codatende1"
     echo -e "  $0 logs codatende1"
     echo -e "  $0 status codatende1"
     echo -e "  $0 restart codatende1"
-    echo -e "\n${BLUE}Nota:${NC} As configurações são salvas automaticamente em instances.json"
+    echo -e "\n${BLUE}📝 Nota:${NC} As configurações são salvas automaticamente em instances.json"
     echo -e "      O comando update preserva as configurações originais"
     echo -e "      Use parâmetros no update para alterar configurações"
 }
@@ -404,27 +404,27 @@ up_stack() {
     export BACKEND_URL=$BACKEND_URL
     export FRONTEND_URL=$FRONTEND_URL
 
-    echo -e "${BLUE}Iniciando stack $STACK_NAME...${NC}"
-    echo -e "\n${YELLOW}Configuração:${NC}"
+    echo -e "${BLUE}🚀 Iniciando stack $STACK_NAME...${NC}"
+    echo -e "\n${YELLOW}⚙️  Configuração:${NC}"
     echo -e "Nome da stack:     ${GREEN}$STACK_NAME${NC}"
     echo -e "Backend:           ${GREEN}$BACKEND_URL${NC} (porta: $BACKEND_PORT)"
     echo -e "Frontend:          ${GREEN}$FRONTEND_URL${NC} (porta: $FRONTEND_PORT)"
-    echo -e "\n${YELLOW}Recursos totais:${NC}"
+    echo -e "\n${YELLOW}💻 Recursos totais:${NC}"
     echo -e "CPU: ${GREEN}$TOTAL_CPU${NC} cores (compartilhados entre todos os serviços)"
     echo -e "Memória: ${GREEN}$TOTAL_MEMORY${NC}MB"
-    echo -e "\n${YELLOW}Distribuição de recursos:${NC}"
+    echo -e "\n${YELLOW}📊 Distribuição de recursos:${NC}"
     echo -e "Backend:    CPU ${GREEN}$BACKEND_CPU_LIMIT${NC} cores (reserva: $BACKEND_CPU_RESERVE), Memória ${GREEN}$BACKEND_MEM_LIMIT${NC}MB (reserva: $BACKEND_MEM_RESERVE)"
     echo -e "Frontend:   CPU ${GREEN}$FRONTEND_CPU_LIMIT${NC} cores (reserva: $FRONTEND_CPU_RESERVE), Memória ${GREEN}$FRONTEND_MEM_LIMIT${NC}MB (reserva: $FRONTEND_MEM_RESERVE)"
     echo -e "PostgreSQL: CPU ${GREEN}$POSTGRES_CPU_LIMIT${NC} cores (reserva: $POSTGRES_CPU_RESERVE), Memória ${GREEN}$POSTGRES_MEM_LIMIT${NC}MB (reserva: $POSTGRES_MEM_RESERVE)"
     echo -e "Redis:      CPU ${GREEN}$REDIS_CPU_LIMIT${NC} cores (reserva: $REDIS_CPU_RESERVE), Memória ${GREEN}$REDIS_MEM_LIMIT${NC}MB (reserva: $REDIS_MEM_RESERVE)"
     
     # Sube a stack
-    echo -e "\n${YELLOW}Criando containers...${NC}"
+    echo -e "\n${YELLOW}📦 Criando containers...${NC}"
     docker-compose -p $STACK_NAME up -d --build
 
     if [ $? -eq 0 ]; then
         # Verifica se todos os serviços estão rodando
-        echo -e "\n${YELLOW}Verificando status dos serviços...${NC}"
+        echo -e "\n${YELLOW}🔍 Verificando status dos serviços...${NC}"
         sleep 5  # Aguarda um pouco para os serviços inicializarem
         
         local all_running=true
@@ -449,7 +449,7 @@ up_stack() {
         
         if [[ "$all_running" == "true" ]]; then
             # Verificação adicional: testa se os serviços estão respondendo
-            echo -e "\n${YELLOW}Testando conectividade dos serviços...${NC}"
+            echo -e "\n${YELLOW}🌐 Testando conectividade dos serviços...${NC}"
             
             local connectivity_ok=true
             
@@ -473,15 +473,15 @@ up_stack() {
                 fi
             fi
             
-            echo -e "\n${GREEN}Stack $STACK_NAME iniciada com sucesso!${NC}"
+            echo -e "\n${GREEN}🎉 Stack $STACK_NAME iniciada com sucesso!${NC}"
             
             # Salva a instância no arquivo JSON
             save_instance "$STACK_NAME" "$BACKEND_PORT" "$FRONTEND_PORT" "$BACKEND_URL" "$FRONTEND_URL" "$TOTAL_CPU" "$TOTAL_MEMORY"
             
-            echo -e "\n${YELLOW}URLs de acesso:${NC}"
+            echo -e "\n${YELLOW}🔗 URLs de acesso:${NC}"
             echo -e "Backend:  ${GREEN}$BACKEND_URL${NC}"
             echo -e "Frontend: ${GREEN}$FRONTEND_URL${NC}"
-            echo -e "\n${YELLOW}Comandos úteis:${NC}"
+            echo -e "\n${YELLOW}🛠️  Comandos úteis:${NC}"
             echo -e "Logs:     ${GREEN}./manage-stacks.sh logs -n $STACK_NAME${NC}"
             echo -e "Status:   ${GREEN}./manage-stacks.sh status -n $STACK_NAME${NC}"
             echo -e "Update:   ${GREEN}./manage-stacks.sh update -n $STACK_NAME${NC}"
@@ -489,7 +489,7 @@ up_stack() {
             echo -e "Reiniciar: ${GREEN}./manage-stacks.sh restart -n $STACK_NAME${NC}"
         else
             echo -e "\n${RED}❌ Erro: Alguns serviços falharam:$failed_services${NC}"
-            echo -e "${YELLOW}Executando rollback...${NC}"
+            echo -e "${YELLOW}🔄 Executando rollback...${NC}"
             
             # Executa rollback - derruba todos os containers
             rollback_stack "$STACK_NAME"
@@ -498,7 +498,7 @@ up_stack() {
         fi
     else
         echo -e "\n${RED}❌ Erro ao criar containers da stack $STACK_NAME${NC}"
-        echo -e "${YELLOW}Executando rollback...${NC}"
+        echo -e "${YELLOW}🔄 Executando rollback...${NC}"
         
         # Executa rollback - derruba todos os containers
         rollback_stack "$STACK_NAME"
@@ -514,32 +514,32 @@ down_stack() {
     # Valida se a instância existe no banco
     validate_instance "$STACK_NAME" "down"
     
-    echo -e "${BLUE}Parando stack $STACK_NAME...${NC}"
+    echo -e "${BLUE}🛑 Parando stack $STACK_NAME...${NC}"
     docker-compose -p $STACK_NAME down
     if [ $? -eq 0 ]; then
-        echo -e "${GREEN}Stack $STACK_NAME parada com sucesso!${NC}"
+        echo -e "${GREEN}✅ Stack $STACK_NAME parada com sucesso!${NC}"
         
         # Remove a instância do arquivo JSON
         remove_instance "$STACK_NAME"
     else
-        echo -e "${RED}Erro ao parar stack $STACK_NAME${NC}"
+        echo -e "${RED}❌ Erro ao parar stack $STACK_NAME${NC}"
     fi
 }
 
 # Função para listar todas as stacks
 list_stacks() {
-    echo -e "${YELLOW}Listando todas as stacks:${NC}\n"
+    echo -e "${YELLOW}📊 Listando todas as stacks:${NC}\n"
     
     # Usa docker ps para listar todos os containers, filtrando por projeto
-    echo -e "${BLUE}Containers ativos:${NC}"
+    echo -e "${BLUE}🐳 Containers ativos:${NC}"
     docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | head -1
     docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "(codatende|backend|frontend|postgres|redis)"
     
-    echo -e "\n${BLUE}Containers parados:${NC}"
+    echo -e "\n${BLUE}⏸️  Containers parados:${NC}"
     docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | head -1
     docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "(codatende|backend|frontend|postgres|redis)" | grep -v "Up"
     
-    echo -e "\n${BLUE}Stacks identificadas:${NC}"
+    echo -e "\n${BLUE}🏷️  Stacks identificadas:${NC}"
     docker ps -a --format "{{.Names}}" | grep -E "(codatende|backend|frontend|postgres|redis)" | cut -d'-' -f1 | sort | uniq
 }
 
@@ -550,7 +550,7 @@ logs_stack() {
     # Valida se a instância existe no banco
     validate_instance "$STACK_NAME" "logs"
     
-    echo -e "${YELLOW}Mostrando logs da stack $STACK_NAME:${NC}\n"
+    echo -e "${YELLOW}📝 Mostrando logs da stack $STACK_NAME:${NC}\n"
     docker-compose -p $STACK_NAME logs -f
 }
 
@@ -561,7 +561,7 @@ status_stack() {
     # Valida se a instância existe no banco
     validate_instance "$STACK_NAME" "status"
     
-    echo -e "${YELLOW}Status da stack $STACK_NAME:${NC}\n"
+    echo -e "${YELLOW}📈 Status da stack $STACK_NAME:${NC}\n"
     docker-compose -p $STACK_NAME ps
 }
 
@@ -572,12 +572,12 @@ restart_stack() {
     # Valida se a instância existe no banco
     validate_instance "$STACK_NAME" "restart"
     
-    echo -e "${BLUE}Reiniciando stack $STACK_NAME...${NC}"
+    echo -e "${BLUE}🔄 Reiniciando stack $STACK_NAME...${NC}"
     docker-compose -p $STACK_NAME restart
     if [ $? -eq 0 ]; then
-        echo -e "${GREEN}Stack $STACK_NAME reiniciada com sucesso!${NC}"
+        echo -e "${GREEN}✅ Stack $STACK_NAME reiniciada com sucesso!${NC}"
     else
-        echo -e "${RED}Erro ao reiniciar stack $STACK_NAME${NC}"
+        echo -e "${RED}❌ Erro ao reiniciar stack $STACK_NAME${NC}"
     fi
 }
 
@@ -636,7 +636,7 @@ update_stack() {
     
     # Carrega a instância do arquivo JSON primeiro
     if load_instance "$STACK_NAME"; then
-        echo -e "${YELLOW}Carregando configuração salva para $STACK_NAME...${NC}"
+        echo -e "${YELLOW}📋 Carregando configuração salva para $STACK_NAME...${NC}"
         echo -e "Backend:  ${GREEN}$BACKEND_URL${NC}"
         echo -e "Frontend: ${GREEN}$FRONTEND_URL${NC}"
         echo -e "CPU:      ${GREEN}$TOTAL_CPU${NC} cores"
@@ -645,7 +645,7 @@ update_stack() {
         # Recalcula os recursos com os valores carregados
         calculate_resources $TOTAL_CPU $TOTAL_MEMORY
     else
-        echo -e "${RED}Erro: Não foi possível carregar a configuração da instância $STACK_NAME${NC}"
+        echo -e "${RED}❌ Erro: Não foi possível carregar a configuração da instância $STACK_NAME${NC}"
         exit 1
     fi
     
@@ -654,27 +654,27 @@ update_stack() {
     
     # Verifica se foram fornecidos novos valores e aplica as mudanças
     if [[ " ${provided_params[@]} " =~ " cpu " && -n "$provided_cpu" && "$provided_cpu" != "$TOTAL_CPU" ]]; then
-        echo -e "${YELLOW}Alterando CPU de $TOTAL_CPU para $provided_cpu cores${NC}"
+        echo -e "${YELLOW}🔄 Alterando CPU de $TOTAL_CPU para $provided_cpu cores${NC}"
         TOTAL_CPU="$provided_cpu"
         config_changed=true
     fi
     
     if [[ " ${provided_params[@]} " =~ " memory " && -n "$provided_memory" && "$provided_memory" != "$TOTAL_MEMORY" ]]; then
-        echo -e "${YELLOW}Alterando memória de $TOTAL_MEMORY para $provided_memory MB${NC}"
+        echo -e "${YELLOW}🔄 Alterando memória de $TOTAL_MEMORY para $provided_memory MB${NC}"
         TOTAL_MEMORY="$provided_memory"
         config_changed=true
     fi
     
     # Só altera portas se foram explicitamente fornecidas
     if [[ " ${provided_params[@]} " =~ " backend_port " && -n "$provided_backend_port" && "$provided_backend_port" != "$BACKEND_PORT" ]]; then
-        echo -e "${YELLOW}Alterando porta do backend de $BACKEND_PORT para $provided_backend_port${NC}"
+        echo -e "${YELLOW}🔄 Alterando porta do backend de $BACKEND_PORT para $provided_backend_port${NC}"
         BACKEND_PORT="$provided_backend_port"
         BACKEND_URL="http://localhost:$BACKEND_PORT"
         config_changed=true
     fi
     
     if [[ " ${provided_params[@]} " =~ " frontend_port " && -n "$provided_frontend_port" && "$provided_frontend_port" != "$FRONTEND_PORT" ]]; then
-        echo -e "${YELLOW}Alterando porta do frontend de $FRONTEND_PORT para $provided_frontend_port${NC}"
+        echo -e "${YELLOW}🔄 Alterando porta do frontend de $FRONTEND_PORT para $provided_frontend_port${NC}"
         FRONTEND_PORT="$provided_frontend_port"
         FRONTEND_URL="http://localhost:$FRONTEND_PORT"
         config_changed=true
@@ -682,67 +682,67 @@ update_stack() {
     
     # Só altera URLs se foram explicitamente fornecidas
     if [[ " ${provided_params[@]} " =~ " backend_url " && -n "$provided_backend_url" && "$provided_backend_url" != "$BACKEND_URL" ]]; then
-        echo -e "${YELLOW}Alterando URL do backend para $provided_backend_url${NC}"
+        echo -e "${YELLOW}🔄 Alterando URL do backend para $provided_backend_url${NC}"
         BACKEND_URL="$provided_backend_url"
         config_changed=true
     fi
     
     if [[ " ${provided_params[@]} " =~ " frontend_url " && -n "$provided_frontend_url" && "$provided_frontend_url" != "$FRONTEND_URL" ]]; then
-        echo -e "${YELLOW}Alterando URL do frontend para $provided_frontend_url${NC}"
+        echo -e "${YELLOW}🔄 Alterando URL do frontend para $provided_frontend_url${NC}"
         FRONTEND_URL="$provided_frontend_url"
         config_changed=true
     fi
     
     if [[ "$config_changed" == "true" ]]; then
-        echo -e "${YELLOW}Recalculando recursos com novas configurações...${NC}"
+        echo -e "${YELLOW}🔄 Recalculando recursos com novas configurações...${NC}"
         calculate_resources $TOTAL_CPU $TOTAL_MEMORY
     fi
     
-    echo -e "${BLUE}Atualizando stack $STACK_NAME...${NC}"
-    echo -e "${YELLOW}Baixando imagens mais recentes...${NC}"
+    echo -e "${BLUE}🔄 Atualizando stack $STACK_NAME...${NC}"
+    echo -e "${YELLOW}⬇️  Baixando imagens mais recentes...${NC}"
     
     # Faz pull das imagens mais recentes
     docker-compose -p $STACK_NAME pull
     
     if [ $? -eq 0 ]; then
-        echo -e "${GREEN}Imagens baixadas com sucesso!${NC}"
-        echo -e "${YELLOW}Rebuildando imagens locais...${NC}"
+        echo -e "${GREEN}✅ Imagens baixadas com sucesso!${NC}"
+        echo -e "${YELLOW}🔨 Rebuildando imagens locais...${NC}"
         
         # Rebuilda as imagens locais
         docker-compose -p $STACK_NAME build --no-cache
         
         if [ $? -eq 0 ]; then
-            echo -e "${GREEN}Imagens rebuildadas com sucesso!${NC}"
-            echo -e "${YELLOW}Reiniciando serviços com as novas imagens...${NC}"
+            echo -e "${GREEN}✅ Imagens rebuildadas com sucesso!${NC}"
+            echo -e "${YELLOW}🚀 Reiniciando serviços com as novas imagens...${NC}"
             
             # Reinicia os serviços para usar as novas imagens
             # Usa --no-deps para não reiniciar dependências desnecessariamente
             docker-compose -p $STACK_NAME up -d --no-deps
             
             if [ $? -eq 0 ]; then
-                echo -e "${GREEN}Stack $STACK_NAME atualizada com sucesso!${NC}"
+                echo -e "${GREEN}🎉 Stack $STACK_NAME atualizada com sucesso!${NC}"
                 
                 # Atualiza a instância no arquivo JSON com as novas configurações
                 save_instance "$STACK_NAME" "$BACKEND_PORT" "$FRONTEND_PORT" "$BACKEND_URL" "$FRONTEND_URL" "$TOTAL_CPU" "$TOTAL_MEMORY"
                 
-                echo -e "${YELLOW}Configuração final:${NC}"
+                echo -e "${YELLOW}⚙️  Configuração final:${NC}"
                 echo -e "Backend:  ${GREEN}$BACKEND_URL${NC}"
                 echo -e "Frontend: ${GREEN}$FRONTEND_URL${NC}"
                 echo -e "Recursos: ${GREEN}$TOTAL_CPU${NC} cores, ${GREEN}$TOTAL_MEMORY${NC}MB"
-                echo -e "${YELLOW}Nota:${NC} Os bancos de dados não foram afetados pela atualização."
-                echo -e "${YELLOW}Comandos úteis:${NC}"
+                echo -e "${YELLOW}💾 Nota:${NC} Os bancos de dados não foram afetados pela atualização."
+                echo -e "${YELLOW}🛠️  Comandos úteis:${NC}"
                 echo -e "Status:   ${GREEN}./manage-stacks.sh status -n $STACK_NAME${NC}"
                 echo -e "Logs:     ${GREEN}./manage-stacks.sh logs -n $STACK_NAME${NC}"
             else
-                echo -e "${RED}Erro ao reiniciar serviços da stack $STACK_NAME${NC}"
+                echo -e "${RED}❌ Erro ao reiniciar serviços da stack $STACK_NAME${NC}"
                 exit 1
             fi
         else
-            echo -e "${RED}Erro ao rebuildar imagens${NC}"
+            echo -e "${RED}❌ Erro ao rebuildar imagens${NC}"
             exit 1
         fi
     else
-        echo -e "${RED}Erro ao baixar imagens atualizadas${NC}"
+        echo -e "${RED}❌ Erro ao baixar imagens atualizadas${NC}"
         exit 1
     fi
 }
@@ -795,7 +795,7 @@ case "$1" in
         show_help
         ;;
     *)
-        echo -e "${RED}Comando inválido: $1${NC}"
+        echo -e "${RED}❌ Comando inválido: $1${NC}"
         echo -e "Use ${GREEN}$0 --help${NC} para ver as opções disponíveis"
         exit 1
         ;;
