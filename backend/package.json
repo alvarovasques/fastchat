@@ -13,7 +13,9 @@
     "pretest": "NODE_ENV=test sequelize db:migrate && NODE_ENV=test sequelize db:seed:all",
     "test": "NODE_ENV=test jest",
     "posttest": "NODE_ENV=test sequelize db:migrate:undo:all",
-    "lint": "eslint src/**/*.ts"
+    "lint": "eslint src/**/*.ts",
+    "docker:push": "docker buildx build --platform linux/amd64,linux/arm64 -t rafaeldomenegueti/atendechat-backend:latest . --push",
+    "docker:push:hml": "docker buildx build --platform linux/amd64,linux/arm64 -t rafaeldomenegueti/atendechat-backend:hml . --push"
   },
   "author": "",
   "license": "MIT",

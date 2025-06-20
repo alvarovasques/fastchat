@@ -2,9 +2,7 @@ version: '3.8'
 
 services:
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: rafaeldomenegueti/atendechat-backend:latest
     ports:
       - "${BACKEND_PORT:-3000}:3000"
     environment:
