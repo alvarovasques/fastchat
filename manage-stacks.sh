@@ -27,6 +27,10 @@ save_instance() {
     local frontend_url=$5
     local total_cpu=$6
     local total_memory=$7
+    local enable_financial=$8
+    local gerencianet_client_id=$9
+    local gerencianet_client_secret=${10}
+    local gerencianet_pix_key=${11}
     
     init_instances_file
     
@@ -41,6 +45,10 @@ save_instance() {
            --arg frontend_url "$frontend_url" \
            --arg total_cpu "$total_cpu" \
            --arg total_memory "$total_memory" \
+           --arg enable_financial "$enable_financial" \
+           --arg gerencianet_client_id "$gerencianet_client_id" \
+           --arg gerencianet_client_secret "$gerencianet_client_secret" \
+           --arg gerencianet_pix_key "$gerencianet_pix_key" \
            '.instances[$name] = {
                "name": $name,
                "created_at": $created_at,
@@ -51,7 +59,11 @@ save_instance() {
                    "backend_url": $backend_url,
                    "frontend_url": $frontend_url,
                    "total_cpu": $total_cpu,
-                   "total_memory": $total_memory
+                   "total_memory": $total_memory,
+                   "enable_financial": $enable_financial,
+                   "gerencianet_client_id": $gerencianet_client_id,
+                   "gerencianet_client_secret": $gerencianet_client_secret,
+                   "gerencianet_pix_key": $gerencianet_pix_key
                },
                "status": "running"
            }' "$INSTANCES_FILE" > "${INSTANCES_FILE}.tmp" && mv "${INSTANCES_FILE}.tmp" "$INSTANCES_FILE"
@@ -78,6 +90,10 @@ load_instance() {
             export FRONTEND_URL=$(echo "$config" | jq -r '.frontend_url')
             export TOTAL_CPU=$(echo "$config" | jq -r '.total_cpu')
             export TOTAL_MEMORY=$(echo "$config" | jq -r '.total_memory')
+            export ENABLE_FINANCIAL=$(echo "$config" | jq -r '.enable_financial // "false"')
+            export GERENCIANET_CLIENT_ID=$(echo "$config" | jq -r '.gerencianet_client_id // ""')
+            export GERENCIANET_CLIENT_SECRET=$(echo "$config" | jq -r '.gerencianet_client_secret // ""')
+            export GERENCIANET_PIX_KEY=$(echo "$config" | jq -r '.gerencianet_pix_key // ""')
             return 0
         fi
     fi
@@ -103,7 +119,7 @@ list_instances() {
     
     if command -v jq &> /dev/null; then
         echo -e "${YELLOW}📋 Instâncias salvas:${NC}\n"
-        jq -r '.instances | to_entries[] | "Nome: \(.key)\n  Criada: \(.value.created_at)\n  Atualizada: \(.value.updated_at)\n  Backend: \(.value.config.backend_url)\n  Frontend: \(.value.config.frontend_url)\n  CPU: \(.value.config.total_cpu) cores\n  Memória: \(.value.config.total_memory)MB\n  Status: \(.value.status)\n"' "$INSTANCES_FILE"
+        jq -r '.instances | to_entries[] | "Nome: \(.key)\n  Criada: \(.value.created_at)\n  Atualizada: \(.value.updated_at)\n  Backend: \(.value.config.backend_url)\n  Frontend: \(.value.config.frontend_url)\n  CPU: \(.value.config.total_cpu) cores\n  Memória: \(.value.config.total_memory)MB\n  Módulo financeiro: \(.value.config.enable_financial // "false")\n  Status: \(.value.status)\n"' "$INSTANCES_FILE"
     else
         echo -e "${YELLOW}⚠️  jq não encontrado. Não é possível listar instâncias.${NC}"
     fi
@@ -213,6 +229,11 @@ show_help() {
     echo -e "  -w, --frontend-url URL    URL do frontend (padrão: http://localhost:PORT)"
     echo -e "  -c, --cpu CORES           Total de cores CPU (padrão: 2)"
     echo -e "  -m, --memory MB           Total de memória em MB (padrão: 2048)"
+    echo -e "\n${GREEN}💰 Opções do módulo financeiro:${NC}"
+    echo -e "  -e, --enable-financial    Habilita o módulo financeiro (padrão: desabilitado)"
+    echo -e "  -g, --gerencianet-client-id ID      Client ID do Gerencianet"
+    echo -e "  -s, --gerencianet-client-secret SECRET  Client Secret do Gerencianet"
+    echo -e "  -p, --gerencianet-pix-key KEY       Chave PIX do Gerencianet"
     echo -e "\n${GREEN}⚙️  Opções para outros comandos:${NC}"
     echo -e "  -n, --name STACK_NAME     Nome da stack (padrão: codatende)"
     echo -e "\n${GREEN}💡 Exemplos:${NC}"
@@ -221,11 +242,16 @@ show_help() {
     echo -e "  $0 up --name codatende2 --backend-port 4000 --frontend-port 4001"
     echo -e "  $0 up -n codatende3 -b 5000 -f 5001 -c 2 -m 2048"
     echo -e "  $0 up -n codatende4 -u https://api.exemplo.com -w https://app.exemplo.com"
+    echo -e "\n  # 💰 Criar instância com módulo financeiro habilitado"
+    echo -e "  $0 up -n codatende-finance -e -g CLIENT_ID -s CLIENT_SECRET -p PIX_KEY"
+    echo -e "  $0 up --name codatende-finance --enable-financial --gerencianet-client-id CLIENT_ID --gerencianet-client-secret CLIENT_SECRET --gerencianet-pix-key PIX_KEY"
     echo -e "\n  # 🔄 Atualizar instância (usa configuração salva)"
     echo -e "  $0 update -n codatende1"
     echo -e "  $0 update codatende1"
     echo -e "\n  # 🔄 Atualizar com novos parâmetros (atualiza configuração)"
     echo -e "  $0 update -n codatende1 -c 4 -m 4096"
+    echo -e "\n  # 💰 Atualizar módulo financeiro"
+    echo -e "  $0 update -n codatende1 -e -g NEW_CLIENT_ID -s NEW_CLIENT_SECRET -p NEW_PIX_KEY"
     echo -e "\n  # 🛠️  Gerenciar instâncias"
     echo -e "  $0 instances                    # 📋 Lista instâncias salvas"
     echo -e "  $0 down -n codatende1          # 🛑 Para e remove do arquivo"
@@ -256,6 +282,14 @@ parse_args() {
     FRONTEND_URL=""
     TOTAL_CPU="2"
     TOTAL_MEMORY="2048"
+    
+    # Variáveis do módulo financeiro
+    ENABLE_FINANCIAL="false"
+    GERENCIANET_SANDBOX="false"
+    GERENCIANET_PIX_CERT="production-cert"
+    GERENCIANET_CLIENT_ID=""
+    GERENCIANET_CLIENT_SECRET=""
+    GERENCIANET_PIX_KEY=""
     
     # Verifica se o primeiro argumento não é uma flag (compatibilidade com formato antigo)
     if [[ ${#args[@]} -gt 0 && ! "${args[0]}" =~ ^- ]]; then
@@ -312,6 +346,22 @@ parse_args() {
                 TOTAL_MEMORY="${args[$((i+1))]}"
                 i=$((i+2))
                 ;;
+            -e|--enable-financial)
+                ENABLE_FINANCIAL="true"
+                i=$((i+1))
+                ;;
+            -g|--gerencianet-client-id)
+                GERENCIANET_CLIENT_ID="${args[$((i+1))]}"
+                i=$((i+2))
+                ;;
+            -s|--gerencianet-client-secret)
+                GERENCIANET_CLIENT_SECRET="${args[$((i+1))]}"
+                i=$((i+2))
+                ;;
+            -p|--gerencianet-pix-key)
+                GERENCIANET_PIX_KEY="${args[$((i+1))]}"
+                i=$((i+2))
+                ;;
             -h|--help)
                 show_help
                 exit 0
@@ -338,6 +388,14 @@ set_default_env_vars() {
     export FRONTEND_PORT=${FRONTEND_PORT:-3001}
     export BACKEND_URL=${BACKEND_URL:-http://localhost:$BACKEND_PORT}
     export FRONTEND_URL=${FRONTEND_URL:-http://localhost:$FRONTEND_PORT}
+    
+    # Variáveis do módulo financeiro
+    export ENABLE_FINANCIAL=${ENABLE_FINANCIAL:-false}
+    export GERENCIANET_SANDBOX=${GERENCIANET_SANDBOX:-false}
+    export GERENCIANET_PIX_CERT=${GERENCIANET_PIX_CERT:-production-cert}
+    export GERENCIANET_CLIENT_ID=${GERENCIANET_CLIENT_ID:-}
+    export GERENCIANET_CLIENT_SECRET=${GERENCIANET_CLIENT_SECRET:-}
+    export GERENCIANET_PIX_KEY=${GERENCIANET_PIX_KEY:-}
     
     # Define recursos padrão se não calculados
     export BACKEND_CPU_LIMIT=${BACKEND_CPU_LIMIT:-0.4}
@@ -403,12 +461,26 @@ up_stack() {
     export FRONTEND_PORT=$FRONTEND_PORT
     export BACKEND_URL=$BACKEND_URL
     export FRONTEND_URL=$FRONTEND_URL
+    
+    # Variáveis do módulo financeiro
+    export ENABLE_FINANCIAL=$ENABLE_FINANCIAL
+    export GERENCIANET_SANDBOX="false"
+    export GERENCIANET_PIX_CERT="production-cert"
+    export GERENCIANET_CLIENT_ID=$GERENCIANET_CLIENT_ID
+    export GERENCIANET_CLIENT_SECRET=$GERENCIANET_CLIENT_SECRET
+    export GERENCIANET_PIX_KEY=$GERENCIANET_PIX_KEY
 
     echo -e "${BLUE}🚀 Iniciando stack $STACK_NAME...${NC}"
     echo -e "\n${YELLOW}⚙️  Configuração:${NC}"
     echo -e "Nome da stack:     ${GREEN}$STACK_NAME${NC}"
     echo -e "Backend:           ${GREEN}$BACKEND_URL${NC} (porta: $BACKEND_PORT)"
     echo -e "Frontend:          ${GREEN}$FRONTEND_URL${NC} (porta: $FRONTEND_PORT)"
+    echo -e "Módulo financeiro: ${GREEN}$ENABLE_FINANCIAL${NC}"
+    if [[ "$ENABLE_FINANCIAL" == "true" ]]; then
+        echo -e "  Client ID:       ${GREEN}$GERENCIANET_CLIENT_ID${NC}"
+        echo -e "  PIX Key:         ${GREEN}$GERENCIANET_PIX_KEY${NC}"
+        echo -e "  Client Secret:   ${GREEN}[OCULTO]${NC}"
+    fi
     echo -e "\n${YELLOW}💻 Recursos totais:${NC}"
     echo -e "CPU: ${GREEN}$TOTAL_CPU${NC} cores (compartilhados entre todos os serviços)"
     echo -e "Memória: ${GREEN}$TOTAL_MEMORY${NC}MB"
@@ -476,7 +548,7 @@ up_stack() {
             echo -e "\n${GREEN}🎉 Stack $STACK_NAME iniciada com sucesso!${NC}"
             
             # Salva a instância no arquivo JSON
-            save_instance "$STACK_NAME" "$BACKEND_PORT" "$FRONTEND_PORT" "$BACKEND_URL" "$FRONTEND_URL" "$TOTAL_CPU" "$TOTAL_MEMORY"
+            save_instance "$STACK_NAME" "$BACKEND_PORT" "$FRONTEND_PORT" "$BACKEND_URL" "$FRONTEND_URL" "$TOTAL_CPU" "$TOTAL_MEMORY" "$ENABLE_FINANCIAL" "$GERENCIANET_CLIENT_ID" "$GERENCIANET_CLIENT_SECRET" "$GERENCIANET_PIX_KEY"
             
             echo -e "\n${YELLOW}🔗 URLs de acesso:${NC}"
             echo -e "Backend:  ${GREEN}$BACKEND_URL${NC}"
@@ -620,6 +692,22 @@ update_stack() {
                 provided_params+=("frontend_url")
                 i=$((i+2))
                 ;;
+            -p|--gerencianet-pix-key)
+                provided_params+=("gerencianet_pix_key")
+                i=$((i+2))
+                ;;
+            -e|--enable-financial)
+                provided_params+=("enable_financial")
+                i=$((i+1))
+                ;;
+            -g|--gerencianet-client-id)
+                provided_params+=("gerencianet_client_id")
+                i=$((i+2))
+                ;;
+            -s|--gerencianet-client-secret)
+                provided_params+=("gerencianet_client_secret")
+                i=$((i+2))
+                ;;
             *)
                 i=$((i+1))
                 ;;
@@ -633,6 +721,10 @@ update_stack() {
     local provided_frontend_port="$FRONTEND_PORT"
     local provided_backend_url="$BACKEND_URL"
     local provided_frontend_url="$FRONTEND_URL"
+    local provided_enable_financial="$ENABLE_FINANCIAL"
+    local provided_gerencianet_client_id="$GERENCIANET_CLIENT_ID"
+    local provided_gerencianet_client_secret="$GERENCIANET_CLIENT_SECRET"
+    local provided_gerencianet_pix_key="$GERENCIANET_PIX_KEY"
     
     # Carrega a instância do arquivo JSON primeiro
     if load_instance "$STACK_NAME"; then
@@ -693,6 +785,33 @@ update_stack() {
         config_changed=true
     fi
     
+    # Alterações do módulo financeiro
+    if [[ " ${provided_params[@]} " =~ " enable_financial " ]]; then
+        if [[ "$provided_enable_financial" != "$ENABLE_FINANCIAL" ]]; then
+            echo -e "${YELLOW}💰 Alterando módulo financeiro para: $provided_enable_financial${NC}"
+            ENABLE_FINANCIAL="$provided_enable_financial"
+            config_changed=true
+        fi
+    fi
+    
+    if [[ " ${provided_params[@]} " =~ " gerencianet_client_id " && -n "$provided_gerencianet_client_id" && "$provided_gerencianet_client_id" != "$GERENCIANET_CLIENT_ID" ]]; then
+        echo -e "${YELLOW}💰 Alterando Gerencianet Client ID${NC}"
+        GERENCIANET_CLIENT_ID="$provided_gerencianet_client_id"
+        config_changed=true
+    fi
+    
+    if [[ " ${provided_params[@]} " =~ " gerencianet_client_secret " && -n "$provided_gerencianet_client_secret" && "$provided_gerencianet_client_secret" != "$GERENCIANET_CLIENT_SECRET" ]]; then
+        echo -e "${YELLOW}💰 Alterando Gerencianet Client Secret${NC}"
+        GERENCIANET_CLIENT_SECRET="$provided_gerencianet_client_secret"
+        config_changed=true
+    fi
+    
+    if [[ " ${provided_params[@]} " =~ " gerencianet_pix_key " && -n "$provided_gerencianet_pix_key" && "$provided_gerencianet_pix_key" != "$GERENCIANET_PIX_KEY" ]]; then
+        echo -e "${YELLOW}💰 Alterando Gerencianet PIX Key${NC}"
+        GERENCIANET_PIX_KEY="$provided_gerencianet_pix_key"
+        config_changed=true
+    fi
+    
     if [[ "$config_changed" == "true" ]]; then
         echo -e "${YELLOW}🔄 Recalculando recursos com novas configurações...${NC}"
         calculate_resources $TOTAL_CPU $TOTAL_MEMORY
@@ -723,7 +842,7 @@ update_stack() {
                 echo -e "${GREEN}🎉 Stack $STACK_NAME atualizada com sucesso!${NC}"
                 
                 # Atualiza a instância no arquivo JSON com as novas configurações
-                save_instance "$STACK_NAME" "$BACKEND_PORT" "$FRONTEND_PORT" "$BACKEND_URL" "$FRONTEND_URL" "$TOTAL_CPU" "$TOTAL_MEMORY"
+                save_instance "$STACK_NAME" "$BACKEND_PORT" "$FRONTEND_PORT" "$BACKEND_URL" "$FRONTEND_URL" "$TOTAL_CPU" "$TOTAL_MEMORY" "$ENABLE_FINANCIAL" "$GERENCIANET_CLIENT_ID" "$GERENCIANET_CLIENT_SECRET" "$GERENCIANET_PIX_KEY"
                 
                 echo -e "${YELLOW}⚙️  Configuração final:${NC}"
                 echo -e "Backend:  ${GREEN}$BACKEND_URL${NC}"

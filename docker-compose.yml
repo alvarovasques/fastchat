@@ -2,12 +2,24 @@ version: '3.8'
 
 services:
   backend:
-    image: rafaeldomenegueti/atendechat-backend:latest
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        - STACK_NAME=${STACK_NAME}
+        - ENABLE_FINANCIAL=${ENABLE_FINANCIAL:-false}
+        - GERENCIANET_PIX_CERT=${GERENCIANET_PIX_CERT:-production-cert}
     ports:
       - "${BACKEND_PORT:-3000}:3000"
     environment:
       - BACKEND_URL:${BACKEND_URL}
       - FRONTEND_URL=${FRONTEND_URL}
+      - ENABLE_FINANCIAL=${ENABLE_FINANCIAL:-false}
+      - GERENCIANET_SANDBOX=${GERENCIANET_SANDBOX:-false}
+      - GERENCIANET_PIX_CERT=${GERENCIANET_PIX_CERT:-production-cert}
+      - GERENCIANET_CLIENT_ID=${GERENCIANET_CLIENT_ID}
+      - GERENCIANET_CLIENT_SECRET=${GERENCIANET_CLIENT_SECRET}
+      - GERENCIANET_PIX_KEY=${GERENCIANET_PIX_KEY}
     env_file:
       - .env
     depends_on:
