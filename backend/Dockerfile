@@ -28,7 +28,7 @@ ENV STACK_NAME=$STACK_NAME
 
 RUN ./copy_cert_assets.sh
 
-# RUN rm -rf ./certs-temp
+RUN rm -rf ./certs-temp
 
 RUN yarn build
 

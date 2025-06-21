@@ -200,6 +200,110 @@ rollback_stack() {
     echo -e "${YELLOW}💡 Dica: Verifique os logs para identificar o problema antes de tentar novamente.${NC}"
 }
 
+# Função para verificar se uma porta está em uso
+check_port_usage() {
+    local port=$1
+    local service_name=$2
+    
+    echo -e "${YELLOW}🔍 Verificando se a porta $port está disponível para $service_name...${NC}"
+    
+    # Verifica se a porta está em uso no sistema
+    if command -v lsof &> /dev/null; then
+        # Usa lsof para verificar se a porta está em uso
+        local port_in_use=$(lsof -i :$port 2>/dev/null | grep LISTEN)
+        if [[ -n "$port_in_use" ]]; then
+            echo -e "${RED}❌ Erro: Porta $port já está em uso!${NC}"
+            echo -e "${YELLOW}📋 Processos usando a porta $port:${NC}"
+            lsof -i :$port 2>/dev/null | grep LISTEN | while read line; do
+                echo -e "  ${RED}  $line${NC}"
+            done
+            echo -e "\n${YELLOW}💡 Soluções:${NC}"
+            echo -e "  1. Pare o processo que está usando a porta $port"
+            echo -e "  2. Use uma porta diferente: -b $((port+1)) para backend ou -f $((port+1)) para frontend"
+            echo -e "  3. Verifique se há outra instância rodando: ./manage-stacks.sh list"
+            return 1
+        fi
+    elif command -v netstat &> /dev/null; then
+        # Fallback para netstat
+        local port_in_use=$(netstat -tuln 2>/dev/null | grep ":$port ")
+        if [[ -n "$port_in_use" ]]; then
+            echo -e "${RED}❌ Erro: Porta $port já está em uso!${NC}"
+            echo -e "${YELLOW}📋 Porta $port está ocupada no sistema${NC}"
+            echo -e "\n${YELLOW}💡 Soluções:${NC}"
+            echo -e "  1. Pare o processo que está usando a porta $port"
+            echo -e "  2. Use uma porta diferente: -b $((port+1)) para backend ou -f $((port+1)) para frontend"
+            echo -e "  3. Verifique se há outra instância rodando: ./manage-stacks.sh list"
+            return 1
+        fi
+    elif command -v ss &> /dev/null; then
+        # Fallback para ss (socket statistics)
+        local port_in_use=$(ss -tuln 2>/dev/null | grep ":$port ")
+        if [[ -n "$port_in_use" ]]; then
+            echo -e "${RED}❌ Erro: Porta $port já está em uso!${NC}"
+            echo -e "${YELLOW}📋 Porta $port está ocupada no sistema${NC}"
+            echo -e "\n${YELLOW}💡 Soluções:${NC}"
+            echo -e "  1. Pare o processo que está usando a porta $port"
+            echo -e "  2. Use uma porta diferente: -b $((port+1)) para backend ou -f $((port+1)) para frontend"
+            echo -e "  3. Verifique se há outra instância rodando: ./manage-stacks.sh list"
+            return 1
+        fi
+    else
+        echo -e "${YELLOW}⚠️  Aviso: Não foi possível verificar se a porta $port está em uso (lsof/netstat/ss não encontrados)${NC}"
+        echo -e "${YELLOW}💡 Verifique manualmente se a porta $port está disponível${NC}"
+    fi
+    
+    echo -e "${GREEN}✅ Porta $port está disponível para $service_name${NC}"
+    return 0
+}
+
+# Função para verificar se as portas estão em uso (backend e frontend)
+validate_ports() {
+    local backend_port=$1
+    local frontend_port=$2
+    
+    echo -e "${YELLOW}🔍 Verificando disponibilidade das portas...${NC}"
+    
+    # Verifica se as portas são iguais
+    if [[ "$backend_port" == "$frontend_port" ]]; then
+        echo -e "${RED}❌ Erro: Backend e frontend não podem usar a mesma porta ($backend_port)!${NC}"
+        echo -e "${YELLOW}💡 Use portas diferentes para backend e frontend${NC}"
+        return 1
+    fi
+    
+    # Verifica se as portas são válidas (entre 1 e 65535)
+    if ! [[ "$backend_port" =~ ^[0-9]+$ ]] || [[ "$backend_port" -lt 1 ]] || [[ "$backend_port" -gt 65535 ]]; then
+        echo -e "${RED}❌ Erro: Porta do backend ($backend_port) não é válida!${NC}"
+        echo -e "${YELLOW}💡 Use uma porta entre 1 e 65535${NC}"
+        return 1
+    fi
+    
+    if ! [[ "$frontend_port" =~ ^[0-9]+$ ]] || [[ "$frontend_port" -lt 1 ]] || [[ "$frontend_port" -gt 65535 ]]; then
+        echo -e "${RED}❌ Erro: Porta do frontend ($frontend_port) não é válida!${NC}"
+        echo -e "${YELLOW}💡 Use uma porta entre 1 e 65535${NC}"
+        return 1
+    fi
+    
+    # Verifica se as portas estão em uso
+    local backend_ok=false
+    local frontend_ok=false
+    
+    if check_port_usage "$backend_port" "backend"; then
+        backend_ok=true
+    fi
+    
+    if check_port_usage "$frontend_port" "frontend"; then
+        frontend_ok=true
+    fi
+    
+    # Retorna sucesso apenas se ambas as portas estiverem disponíveis
+    if [[ "$backend_ok" == "true" && "$frontend_ok" == "true" ]]; then
+        echo -e "${GREEN}✅ Todas as portas estão disponíveis!${NC}"
+        return 0
+    else
+        return 1
+    fi
+}
+
 # Função para mostrar ajuda
 show_help() {
     echo -e "${YELLOW}🐳 Gerenciador de Stacks Docker${NC}"
@@ -267,6 +371,11 @@ show_help() {
     echo -e "\n${BLUE}📝 Nota:${NC} As configurações são salvas automaticamente em instances.json"
     echo -e "      O comando update preserva as configurações originais"
     echo -e "      Use parâmetros no update para alterar configurações"
+    echo -e "\n${BLUE}🔍 Verificação de Portas:${NC}"
+    echo -e "      Os comandos 'up' e 'update' verificam automaticamente se as portas estão disponíveis"
+    echo -e "      Se uma porta estiver em uso, o script mostrará quais processos estão usando"
+    echo -e "      Use 'lsof -i :PORTA' ou 'netstat -tuln | grep :PORTA' para verificar manualmente"
+    echo -e "      Portas válidas: 1-65535 (evite portas privilegiadas < 1024)"
 }
 
 # Função para processar argumentos
@@ -469,6 +578,12 @@ up_stack() {
     export GERENCIANET_CLIENT_ID=$GERENCIANET_CLIENT_ID
     export GERENCIANET_CLIENT_SECRET=$GERENCIANET_CLIENT_SECRET
     export GERENCIANET_PIX_KEY=$GERENCIANET_PIX_KEY
+
+    # Verifica se as portas estão disponíveis antes de prosseguir
+    if ! validate_ports "$BACKEND_PORT" "$FRONTEND_PORT"; then
+        echo -e "${RED}❌ Erro: Verificação de portas falhou. Abortando criação da stack.${NC}"
+        exit 1
+    fi
 
     echo -e "${BLUE}🚀 Iniciando stack $STACK_NAME...${NC}"
     echo -e "\n${YELLOW}⚙️  Configuração:${NC}"
@@ -815,6 +930,15 @@ update_stack() {
     if [[ "$config_changed" == "true" ]]; then
         echo -e "${YELLOW}🔄 Recalculando recursos com novas configurações...${NC}"
         calculate_resources $TOTAL_CPU $TOTAL_MEMORY
+    fi
+    
+    # Verifica se as portas estão disponíveis antes de prosseguir (apenas se houve mudança de portas)
+    if [[ " ${provided_params[@]} " =~ " backend_port " || " ${provided_params[@]} " =~ " frontend_port " ]]; then
+        echo -e "${YELLOW}🔍 Verificando disponibilidade das novas portas...${NC}"
+        if ! validate_ports "$BACKEND_PORT" "$FRONTEND_PORT"; then
+            echo -e "${RED}❌ Erro: Verificação de portas falhou. Abortando atualização da stack.${NC}"
+            exit 1
+        fi
     fi
     
     echo -e "${BLUE}🔄 Atualizando stack $STACK_NAME...${NC}"
