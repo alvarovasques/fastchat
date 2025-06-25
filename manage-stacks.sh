@@ -187,6 +187,10 @@ rollback_stack() {
     echo -e "  💾 Removendo volumes órfãos..."
     docker volume ls --filter "name=${stack_name}_" --format "{{.Name}}" | xargs -r docker volume rm 2>/dev/null
     
+    # Remove imagens órfãs (não utilizadas)
+    echo -e "  🖼️  Removendo imagens órfãs..."
+    docker image prune -f 2>/dev/null
+    
     # Remove a instância do arquivo JSON se existir
     if command -v jq &> /dev/null; then
         local exists=$(jq -r ".instances[\"$stack_name\"]" "$INSTANCES_FILE" 2>/dev/null)
@@ -559,8 +563,107 @@ calculate_resources() {
     export REDIS_MEM_RESERVE=$(echo "scale=1; $REDIS_MEM_LIMIT * 0.5" | bc)
 }
 
+# Função para verificar dependências do sistema
+check_dependencies() {
+    echo -e "${YELLOW}🔍 Verificando dependências do sistema...${NC}"
+    
+    local missing_deps=()
+    
+    # Verifica Docker
+    if ! command -v docker &> /dev/null; then
+        missing_deps+=("docker")
+    fi
+    
+    # Verifica Docker Compose
+    if ! command -v docker-compose &> /dev/null; then
+        missing_deps+=("docker-compose")
+    fi
+    
+    # Verifica jq (opcional, mas recomendado)
+    if ! command -v jq &> /dev/null; then
+        echo -e "${YELLOW}⚠️  Aviso: jq não encontrado. Algumas funcionalidades serão limitadas.${NC}"
+        echo -e "${YELLOW}💡 Instale jq: brew install jq (macOS) ou apt-get install jq (Ubuntu)${NC}"
+    fi
+    
+    # Verifica bc para cálculos
+    if ! command -v bc &> /dev/null; then
+        echo -e "${YELLOW}⚠️  Aviso: bc não encontrado. Cálculos de recursos podem falhar.${NC}"
+        echo -e "${YELLOW}💡 Instale bc: brew install bc (macOS) ou apt-get install bc (Ubuntu)${NC}"
+    fi
+    
+    if [[ ${#missing_deps[@]} -gt 0 ]]; then
+        echo -e "${RED}❌ Dependências faltando: ${missing_deps[*]}${NC}"
+        echo -e "${YELLOW}💡 Instale as dependências antes de continuar:${NC}"
+        for dep in "${missing_deps[@]}"; do
+            case $dep in
+                "docker")
+                    echo -e "  Docker: https://docs.docker.com/get-docker/"
+                    ;;
+                "docker-compose")
+                    echo -e "  Docker Compose: https://docs.docker.com/compose/install/"
+                    ;;
+            esac
+        done
+        exit 1
+    fi
+    
+    echo -e "${GREEN}✅ Todas as dependências principais estão instaladas${NC}"
+}
+
+# Função para verificar health dos serviços
+check_service_health() {
+    local stack_name=$1
+    local max_attempts=30
+    local attempt=1
+    
+    echo -e "${YELLOW}🏥 Verificando health dos serviços...${NC}"
+    
+    # Verifica backend
+    echo -e "  🔍 Verificando backend..."
+    while [[ $attempt -le $max_attempts ]]; do
+        if curl -s --max-time 5 "http://localhost:$BACKEND_PORT/health" > /dev/null 2>&1; then
+            echo -e "    ${GREEN}✅ Backend está respondendo${NC}"
+            break
+        fi
+        
+        if [[ $attempt -eq $max_attempts ]]; then
+            echo -e "    ${RED}❌ Backend não está respondendo após $max_attempts tentativas${NC}"
+            return 1
+        fi
+        
+        echo -e "    ${YELLOW}⏳ Tentativa $attempt/$max_attempts...${NC}"
+        sleep 2
+        ((attempt++))
+    done
+    
+    # Verifica frontend
+    echo -e "  🔍 Verificando frontend..."
+    attempt=1
+    while [[ $attempt -le $max_attempts ]]; do
+        if curl -s --max-time 5 "http://localhost:$FRONTEND_PORT" > /dev/null 2>&1; then
+            echo -e "    ${GREEN}✅ Frontend está respondendo${NC}"
+            break
+        fi
+        
+        if [[ $attempt -eq $max_attempts ]]; then
+            echo -e "    ${RED}❌ Frontend não está respondendo após $max_attempts tentativas${NC}"
+            return 1
+        fi
+        
+        echo -e "    ${YELLOW}⏳ Tentativa $attempt/$max_attempts...${NC}"
+        sleep 2
+        ((attempt++))
+    done
+    
+    echo -e "${GREEN}✅ Todos os serviços estão funcionando corretamente!${NC}"
+    return 0
+}
+
 # Função para subir uma stack
 up_stack() {
+    # Verifica dependências primeiro
+    check_dependencies
+    
     # Calcula recursos compartilhados
     calculate_resources $TOTAL_CPU $TOTAL_MEMORY
 
@@ -636,44 +739,27 @@ up_stack() {
         
         if [[ "$all_running" == "true" ]]; then
             # Verificação adicional: testa se os serviços estão respondendo
-            echo -e "\n${YELLOW}🌐 Testando conectividade dos serviços...${NC}"
-            
-            local connectivity_ok=true
-            
-            # Testa backend (se estiver na porta padrão)
-            if [[ "$BACKEND_PORT" == "3000" ]] || [[ "$BACKEND_PORT" == "4000" ]] || [[ "$BACKEND_PORT" == "5000" ]]; then
-                if ! curl -s --max-time 5 "http://localhost:$BACKEND_PORT/health" > /dev/null 2>&1; then
-                    echo -e "${YELLOW}⚠️  Backend pode não estar respondendo corretamente (porta $BACKEND_PORT)${NC}"
-                    # Não falha aqui, apenas avisa
-                else
-                    echo -e "${GREEN}✅ Backend respondendo na porta $BACKEND_PORT${NC}"
-                fi
+            if check_service_health "$STACK_NAME"; then
+                echo -e "\n${GREEN}🎉 Stack $STACK_NAME iniciada com sucesso!${NC}"
+                
+                # Salva a instância no arquivo JSON
+                save_instance "$STACK_NAME" "$BACKEND_PORT" "$FRONTEND_PORT" "$BACKEND_URL" "$FRONTEND_URL" "$TOTAL_CPU" "$TOTAL_MEMORY" "$ENABLE_FINANCIAL" "$GERENCIANET_CLIENT_ID" "$GERENCIANET_CLIENT_SECRET" "$GERENCIANET_PIX_KEY"
+                
+                echo -e "\n${YELLOW}🔗 URLs de acesso:${NC}"
+                echo -e "Backend:  ${GREEN}$BACKEND_URL${NC}"
+                echo -e "Frontend: ${GREEN}$FRONTEND_URL${NC}"
+                echo -e "\n${YELLOW}🛠️  Comandos úteis:${NC}"
+                echo -e "Logs:     ${GREEN}./manage-stacks.sh logs -n $STACK_NAME${NC}"
+                echo -e "Status:   ${GREEN}./manage-stacks.sh status -n $STACK_NAME${NC}"
+                echo -e "Update:   ${GREEN}./manage-stacks.sh update -n $STACK_NAME${NC}"
+                echo -e "Parar:    ${GREEN}./manage-stacks.sh down -n $STACK_NAME${NC}"
+                echo -e "Reiniciar: ${GREEN}./manage-stacks.sh restart -n $STACK_NAME${NC}"
+            else
+                echo -e "\n${RED}❌ Erro: Serviços não estão respondendo corretamente${NC}"
+                echo -e "${YELLOW}🔄 Executando rollback...${NC}"
+                rollback_stack "$STACK_NAME"
+                exit 1
             fi
-            
-            # Testa frontend (se estiver na porta padrão)
-            if [[ "$FRONTEND_PORT" == "3001" ]] || [[ "$FRONTEND_PORT" == "4001" ]] || [[ "$FRONTEND_PORT" == "5001" ]]; then
-                if ! curl -s --max-time 5 "http://localhost:$FRONTEND_PORT" > /dev/null 2>&1; then
-                    echo -e "${YELLOW}⚠️  Frontend pode não estar respondendo corretamente (porta $FRONTEND_PORT)${NC}"
-                    # Não falha aqui, apenas avisa
-                else
-                    echo -e "${GREEN}✅ Frontend respondendo na porta $FRONTEND_PORT${NC}"
-                fi
-            fi
-            
-            echo -e "\n${GREEN}🎉 Stack $STACK_NAME iniciada com sucesso!${NC}"
-            
-            # Salva a instância no arquivo JSON
-            save_instance "$STACK_NAME" "$BACKEND_PORT" "$FRONTEND_PORT" "$BACKEND_URL" "$FRONTEND_URL" "$TOTAL_CPU" "$TOTAL_MEMORY" "$ENABLE_FINANCIAL" "$GERENCIANET_CLIENT_ID" "$GERENCIANET_CLIENT_SECRET" "$GERENCIANET_PIX_KEY"
-            
-            echo -e "\n${YELLOW}🔗 URLs de acesso:${NC}"
-            echo -e "Backend:  ${GREEN}$BACKEND_URL${NC}"
-            echo -e "Frontend: ${GREEN}$FRONTEND_URL${NC}"
-            echo -e "\n${YELLOW}🛠️  Comandos úteis:${NC}"
-            echo -e "Logs:     ${GREEN}./manage-stacks.sh logs -n $STACK_NAME${NC}"
-            echo -e "Status:   ${GREEN}./manage-stacks.sh status -n $STACK_NAME${NC}"
-            echo -e "Update:   ${GREEN}./manage-stacks.sh update -n $STACK_NAME${NC}"
-            echo -e "Parar:    ${GREEN}./manage-stacks.sh down -n $STACK_NAME${NC}"
-            echo -e "Reiniciar: ${GREEN}./manage-stacks.sh restart -n $STACK_NAME${NC}"
         else
             echo -e "\n${RED}❌ Erro: Alguns serviços falharam:$failed_services${NC}"
             echo -e "${YELLOW}🔄 Executando rollback...${NC}"
