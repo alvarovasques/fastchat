@@ -320,15 +320,23 @@ show_help() {
     echo -e "  $0 logs [OPÇÕES]"
     echo -e "  $0 status [OPÇÕES]"
     echo -e "  $0 restart [OPÇÕES]"
+    echo -e "  $0 ssl [OPÇÕES]"
+    echo -e "  $0 remove-ssl [OPÇÕES]"
+    echo -e "  $0 renew-ssl [OPÇÕES]"
+    echo -e "  $0 list-ssl"
     echo -e "\n${GREEN}🔧 Comandos:${NC}"
-    echo -e "  🚀 up        - Inicia uma nova stack (salva configuração)"
-    echo -e "  🛑 down      - Para uma stack"
-    echo -e "  🔄 update    - Atualiza e rebuilda imagens Docker (preserva configuração)"
-    echo -e "  📊 list      - Lista todas as stacks Docker"
-    echo -e "  📋 instances - Lista todas as instâncias salvas"
-    echo -e "  📝 logs      - Mostra logs de uma stack"
-    echo -e "  📈 status    - Mostra status de uma stack"
-    echo -e "  🔄 restart   - Reinicia uma stack"
+    echo -e "  🚀 up          - Inicia uma nova stack (salva configuração)"
+    echo -e "  🛑 down        - Para uma stack"
+    echo -e "  🔄 update      - Atualiza e rebuilda imagens Docker (preserva configuração)"
+    echo -e "  📊 list        - Lista todas as stacks Docker"
+    echo -e "  📋 instances   - Lista todas as instâncias salvas"
+    echo -e "  📝 logs        - Mostra logs de uma stack"
+    echo -e "  📈 status      - Mostra status de uma stack"
+    echo -e "  🔄 restart     - Reinicia uma stack"
+    echo -e "  🔐 ssl         - Configura SSL/HTTPS para uma instância"
+    echo -e "  🗑️  remove-ssl  - Remove SSL de uma instância"
+    echo -e "  🔄 renew-ssl   - Renova certificados SSL"
+    echo -e "  📋 list-ssl    - Lista configurações SSL ativas"
     echo -e "\n${GREEN}⚙️  Opções para 'up':${NC}"
     echo -e "  -n, --name STACK_NAME     Nome da stack (padrão: codatende)"
     echo -e "  -b, --backend-port PORT   Porta do backend (padrão: 3000)"
@@ -342,6 +350,10 @@ show_help() {
     echo -e "  -g, --gerencianet-client-id ID      Client ID do Gerencianet"
     echo -e "  -s, --gerencianet-client-secret SECRET  Client Secret do Gerencianet"
     echo -e "  -p, --gerencianet-pix-key KEY       Chave PIX do Gerencianet"
+    echo -e "\n${GREEN}🔐 Opções para 'ssl':${NC}"
+    echo -e "  -n, --name STACK_NAME     Nome da stack"
+    echo -e "  -u, --backend-url URL     URL do backend (obrigatório)"
+    echo -e "  -w, --frontend-url URL    URL do frontend (obrigatório)"
     echo -e "\n${GREEN}⚙️  Opções para outros comandos:${NC}"
     echo -e "  -n, --name STACK_NAME     Nome da stack (padrão: codatende)"
     echo -e "\n${GREEN}💡 Exemplos:${NC}"
@@ -353,6 +365,12 @@ show_help() {
     echo -e "\n  # 💰 Criar instância com módulo financeiro habilitado"
     echo -e "  $0 up -n codatende-finance -e -g CLIENT_ID -s CLIENT_SECRET -p PIX_KEY"
     echo -e "  $0 up --name codatende-finance --enable-financial --gerencianet-client-id CLIENT_ID --gerencianet-client-secret CLIENT_SECRET --gerencianet-pix-key PIX_KEY"
+    echo -e "\n  # 🔐 Configurar SSL/HTTPS"
+    echo -e "  $0 ssl -n codatende1 -u https://api.exemplo.com -w https://app.exemplo.com"
+    echo -e "  $0 ssl --name codatende2 --backend-url https://api.exemplo.com --frontend-url https://app.exemplo.com"
+    echo -e "  $0 renew-ssl -n codatende1"
+    echo -e "  $0 list-ssl"
+    echo -e "  $0 remove-ssl -n codatende1"
     echo -e "\n  # 🔄 Atualizar instância (usa configuração salva)"
     echo -e "  $0 update -n codatende1"
     echo -e "  $0 update codatende1"
@@ -380,6 +398,11 @@ show_help() {
     echo -e "      Se uma porta estiver em uso, o script mostrará quais processos estão usando"
     echo -e "      Use 'lsof -i :PORTA' ou 'netstat -tuln | grep :PORTA' para verificar manualmente"
     echo -e "      Portas válidas: 1-65535 (evite portas privilegiadas < 1024)"
+    echo -e "\n${BLUE}🔐 SSL/HTTPS:${NC}"
+    echo -e "      O sistema configura automaticamente Nginx e Certbot para SSL"
+    echo -e "      Certificados são renovados automaticamente via cron job"
+    echo -e "      Use 'ssl' para configurar HTTPS em um domínio"
+    echo -e "      Use 'list-ssl' para ver configurações SSL ativas"
 }
 
 # Função para processar argumentos
@@ -457,6 +480,10 @@ parse_args() {
                 ;;
             -m|--memory)
                 TOTAL_MEMORY="${args[$((i+1))]}"
+                i=$((i+2))
+                ;;
+            -d|--domain)
+                DOMAIN="${args[$((i+1))]}"
                 i=$((i+2))
                 ;;
             -e|--enable-financial)
@@ -565,6 +592,9 @@ calculate_resources() {
 
 # Função para verificar dependências do sistema
 check_dependencies() {
+    # Executa inicialização do sistema primeiro
+    initialize_system
+    
     echo -e "${YELLOW}🔍 Verificando dependências do sistema...${NC}"
     
     local missing_deps=()
@@ -1076,6 +1106,840 @@ update_stack() {
     fi
 }
 
+# Função de inicialização do sistema
+initialize_system() {
+    echo -e "${YELLOW}🚀 Inicializando sistema...${NC}"
+    
+    # Verifica se é a primeira execução
+    local init_file=".system_initialized"
+    if [[ -f "$init_file" ]]; then
+        echo -e "${GREEN}✅ Sistema já inicializado${NC}"
+        return 0
+    fi
+    
+    echo -e "${YELLOW}🔧 Primeira execução detectada. Configurando sistema...${NC}"
+    
+    # Detecta o sistema operacional
+    local os_type=""
+    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        if command -v apt-get &> /dev/null; then
+            os_type="debian"
+        elif command -v yum &> /dev/null; then
+            os_type="rhel"
+        elif command -v pacman &> /dev/null; then
+            os_type="arch"
+        fi
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        os_type="macos"
+    fi
+    
+    echo -e "${YELLOW}📋 Sistema operacional detectado: $os_type${NC}"
+    
+    # Instala dependências básicas
+    install_basic_dependencies "$os_type"
+    
+    # Instala Docker se não estiver instalado
+    install_docker "$os_type"
+    
+    # Instala Docker Compose se não estiver instalado
+    install_docker_compose "$os_type"
+    
+    # Instala ferramentas úteis
+    install_useful_tools "$os_type"
+    
+    # Configura Nginx e Certbot
+    setup_nginx_certbot "$os_type"
+    
+    # Cria arquivo de marcação
+    echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" > "$init_file"
+    
+    echo -e "${GREEN}✅ Sistema inicializado com sucesso!${NC}"
+    echo -e "${YELLOW}💡 Você pode executar novamente o comando desejado${NC}"
+}
+
+# Função para instalar dependências básicas
+install_basic_dependencies() {
+    local os_type=$1
+    
+    echo -e "${YELLOW}📦 Instalando dependências básicas...${NC}"
+    
+    case $os_type in
+        "debian")
+            sudo apt-get update
+            sudo apt-get install -y curl wget git unzip software-properties-common apt-transport-https ca-certificates gnupg lsb-release
+            ;;
+        "rhel")
+            sudo yum update -y
+            sudo yum install -y curl wget git unzip
+            ;;
+        "arch")
+            sudo pacman -Syu --noconfirm
+            sudo pacman -S --noconfirm curl wget git unzip
+            ;;
+        "macos")
+            if ! command -v brew &> /dev/null; then
+                echo -e "${YELLOW}🍺 Instalando Homebrew...${NC}"
+                /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+            fi
+            brew install curl wget git
+            ;;
+        *)
+            echo -e "${YELLOW}⚠️  Sistema operacional não suportado. Instale manualmente: curl, wget, git${NC}"
+            ;;
+    esac
+}
+
+# Função para instalar Docker
+install_docker() {
+    local os_type=$1
+    
+    if command -v docker &> /dev/null; then
+        echo -e "${GREEN}✅ Docker já está instalado${NC}"
+        return 0
+    fi
+    
+    echo -e "${YELLOW}🐳 Instalando Docker...${NC}"
+    
+    case $os_type in
+        "debian")
+            # Remove versões antigas
+            sudo apt-get remove -y docker docker-engine docker.io containerd runc 2>/dev/null || true
+            
+            # Adiciona repositório oficial
+            curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+            
+            sudo apt-get update
+            sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+            
+            # Adiciona usuário ao grupo docker
+            sudo usermod -aG docker $USER
+            ;;
+        "rhel")
+            sudo yum install -y yum-utils
+            sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+            sudo yum install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+            sudo systemctl start docker
+            sudo systemctl enable docker
+            sudo usermod -aG docker $USER
+            ;;
+        "macos")
+            echo -e "${YELLOW}🍎 Para macOS, instale Docker Desktop manualmente: https://docs.docker.com/desktop/mac/install/${NC}"
+            ;;
+        *)
+            echo -e "${YELLOW}⚠️  Instale Docker manualmente para seu sistema: https://docs.docker.com/get-docker/${NC}"
+            ;;
+    esac
+}
+
+# Função para instalar Docker Compose
+install_docker_compose() {
+    local os_type=$1
+    
+    if command -v docker-compose &> /dev/null; then
+        echo -e "${GREEN}✅ Docker Compose já está instalado${NC}"
+        return 0
+    fi
+    
+    echo -e "${YELLOW}🐙 Instalando Docker Compose...${NC}"
+    
+    # Instala versão standalone do Docker Compose
+    local compose_version="v2.20.0"
+    sudo curl -L "https://github.com/docker/compose/releases/download/${compose_version}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+    sudo chmod +x /usr/local/bin/docker-compose
+    
+    # Cria link simbólico se necessário
+    if [[ ! -f /usr/bin/docker-compose ]]; then
+        sudo ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
+    fi
+}
+
+# Função para instalar ferramentas úteis
+install_useful_tools() {
+    local os_type=$1
+    
+    echo -e "${YELLOW}🛠️  Instalando ferramentas úteis...${NC}"
+    
+    # Instala jq
+    if ! command -v jq &> /dev/null; then
+        case $os_type in
+            "debian")
+                sudo apt-get install -y jq
+                ;;
+            "rhel")
+                sudo yum install -y jq
+                ;;
+            "arch")
+                sudo pacman -S --noconfirm jq
+                ;;
+            "macos")
+                brew install jq
+                ;;
+        esac
+    fi
+    
+    # Instala bc
+    if ! command -v bc &> /dev/null; then
+        case $os_type in
+            "debian")
+                sudo apt-get install -y bc
+                ;;
+            "rhel")
+                sudo yum install -y bc
+                ;;
+            "arch")
+                sudo pacman -S --noconfirm bc
+                ;;
+            "macos")
+                brew install bc
+                ;;
+        esac
+    fi
+    
+    # Instala certbot
+    if ! command -v certbot &> /dev/null; then
+        case $os_type in
+            "debian")
+                sudo apt-get install -y certbot python3-certbot-nginx
+                ;;
+            "rhel")
+                sudo yum install -y certbot python3-certbot-nginx
+                ;;
+            "arch")
+                sudo pacman -S --noconfirm certbot certbot-nginx
+                ;;
+            "macos")
+                brew install certbot
+                ;;
+        esac
+    fi
+}
+
+# Função para configurar Nginx e Certbot
+setup_nginx_certbot() {
+    local os_type=$1
+    
+    echo -e "${YELLOW}🌐 Configurando Nginx e Certbot...${NC}"
+    
+    # Instala Nginx se não estiver instalado
+    if ! command -v nginx &> /dev/null; then
+        case $os_type in
+            "debian")
+                sudo apt-get install -y nginx
+                ;;
+            "rhel")
+                sudo yum install -y nginx
+                ;;
+            "arch")
+                sudo pacman -S --noconfirm nginx
+                ;;
+            "macos")
+                brew install nginx
+                ;;
+        esac
+    fi
+    
+    # Cria diretório para configurações do Nginx
+    sudo mkdir -p /etc/nginx/sites-available
+    sudo mkdir -p /etc/nginx/sites-enabled
+    
+    # Cria template de configuração do Nginx
+    create_nginx_template
+    
+    # Configura Certbot
+    setup_certbot_config
+    
+    echo -e "${GREEN}✅ Nginx e Certbot configurados${NC}"
+}
+
+# Função para criar template do Nginx
+create_nginx_template() {
+    local nginx_template="/etc/nginx/sites-available/codatende-template"
+    
+    sudo tee "$nginx_template" > /dev/null << 'EOF'
+# Template de configuração Nginx para Codatende
+# Substitua {DOMAIN} pelo domínio real
+# Substitua {BACKEND_PORT} pela porta do backend
+# Substitua {FRONTEND_PORT} pela porta do frontend
+
+server {
+    listen 80;
+    server_name {DOMAIN};
+    
+    # Redireciona HTTP para HTTPS
+    return 301 https://$server_name$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name {DOMAIN};
+    
+    # Configurações SSL (serão gerenciadas pelo Certbot)
+    ssl_certificate /etc/letsencrypt/live/{DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/{DOMAIN}/privkey.pem;
+    
+    # Configurações de segurança SSL
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-RSA-AES256-GCM-SHA512:DHE-RSA-AES256-GCM-SHA512:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+    
+    # Headers de segurança
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Frame-Options DENY always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    
+    # Proxy para o backend
+    location /api/ {
+        proxy_pass http://localhost:{BACKEND_PORT}/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+        proxy_read_timeout 86400;
+    }
+    
+    # Proxy para o frontend
+    location / {
+        proxy_pass http://localhost:{FRONTEND_PORT}/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+    
+    # Configurações para WebSocket
+    location /socket.io/ {
+        proxy_pass http://localhost:{BACKEND_PORT}/socket.io/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+EOF
+    
+    echo -e "${GREEN}✅ Template do Nginx criado: $nginx_template${NC}"
+}
+
+# Função para configurar Certbot
+setup_certbot_config() {
+    local certbot_config="/etc/letsencrypt/cli.ini"
+    
+    sudo tee "$certbot_config" > /dev/null << 'EOF'
+# Configuração do Certbot
+# Autor: Atendechat
+
+# Diretório de logs
+logs-dir = /var/log/letsencrypt
+
+# Diretório de trabalho
+work-dir = /var/lib/letsencrypt
+
+# Configurações de renovação automática
+deploy-hook = systemctl reload nginx
+renew-hook = systemctl reload nginx
+
+# Configurações de email (opcional)
+# email = admin@seudominio.com
+
+# Aceitar termos de serviço
+agree-tos = True
+
+# Não solicitar email
+register-unsafely-without-email = True
+
+# Configurações de staging (para testes)
+# server = https://acme-staging-v02.api.letsencrypt.org/directory
+EOF
+    
+    echo -e "${GREEN}✅ Configuração do Certbot criada: $certbot_config${NC}"
+    
+    # Cria script para renovação automática
+    create_certbot_renewal_script
+}
+
+# Função para criar script de renovação automática
+create_certbot_renewal_script() {
+    local renewal_script="/usr/local/bin/certbot-renew.sh"
+    
+    sudo tee "$renewal_script" > /dev/null << 'EOF'
+#!/bin/bash
+
+# Script de renovação automática do Certbot
+# Autor: Atendechat
+
+# Cores para output
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+echo -e "${YELLOW}🔄 Verificando renovação de certificados SSL...${NC}"
+
+# Testa renovação (não aplica mudanças)
+if certbot renew --dry-run; then
+    echo -e "${GREEN}✅ Certificados estão válidos${NC}"
+else
+    echo -e "${YELLOW}🔄 Renovando certificados...${NC}"
+    
+    # Executa renovação real
+    if certbot renew; then
+        echo -e "${GREEN}✅ Certificados renovados com sucesso${NC}"
+        
+        # Recarrega Nginx
+        if systemctl reload nginx; then
+            echo -e "${GREEN}✅ Nginx recarregado${NC}"
+        else
+            echo -e "${RED}❌ Erro ao recarregar Nginx${NC}"
+        fi
+    else
+        echo -e "${RED}❌ Erro ao renovar certificados${NC}"
+    fi
+fi
+EOF
+    
+    sudo chmod +x "$renewal_script"
+    echo -e "${GREEN}✅ Script de renovação criado: $renewal_script${NC}"
+    
+    # Configura cron job para renovação automática
+    setup_certbot_cron
+}
+
+# Função para configurar cron job do Certbot
+setup_certbot_cron() {
+    local cron_job="0 12 * * * /usr/local/bin/certbot-renew.sh >> /var/log/certbot-renew.log 2>&1"
+    
+    # Adiciona ao crontab do root
+    (sudo crontab -l 2>/dev/null; echo "$cron_job") | sudo crontab -
+    
+    echo -e "${GREEN}✅ Cron job configurado para renovação automática${NC}"
+    echo -e "${YELLOW}💡 Certificados serão verificados diariamente às 12:00${NC}"
+}
+
+# Função para configurar SSL para uma instância
+setup_ssl() {
+    local stack_name=$1
+    local backend_url=$2
+    local frontend_url=$3
+    
+    if [[ -z "$backend_url" || -z "$frontend_url" ]]; then
+        echo -e "${RED}❌ Erro: backend-url e frontend-url são obrigatórios${NC}"
+        echo -e "${YELLOW}💡 Uso: ./manage-stacks.sh ssl -n STACK_NAME -u BACKEND_URL -w FRONTEND_URL${NC}"
+        echo -e "${YELLOW}💡 Exemplo: ./manage-stacks.sh ssl -n codatende1 -u https://api.exemplo.com -w https://app.exemplo.com${NC}"
+        exit 1
+    fi
+    
+    # Valida se a instância existe
+    validate_instance "$stack_name" "ssl"
+    
+    # Extrai domínios das URLs
+    local backend_domain=$(echo "$backend_url" | sed -E 's|^https?://([^:/]+).*|\1|')
+    local frontend_domain=$(echo "$frontend_url" | sed -E 's|^https?://([^:/]+).*|\1|')
+    
+    # Verifica se os domínios são válidos
+    if [[ -z "$backend_domain" || -z "$frontend_domain" ]]; then
+        echo -e "${RED}❌ Erro: URLs inválidas. Use URLs completas com domínio${NC}"
+        echo -e "${YELLOW}💡 Exemplo: https://api.exemplo.com, https://app.exemplo.com${NC}"
+        exit 1
+    fi
+    
+    echo -e "${YELLOW}🔐 Configurando SSL para $stack_name...${NC}"
+    echo -e "Backend:  ${GREEN}$backend_url${NC} (domínio: $backend_domain)"
+    echo -e "Frontend: ${GREEN}$frontend_url${NC} (domínio: $frontend_domain)"
+    
+    # Carrega configuração da instância
+    if load_instance "$stack_name"; then
+        echo -e "${GREEN}✅ Configuração carregada: Backend $BACKEND_PORT, Frontend $FRONTEND_PORT${NC}"
+    else
+        echo -e "${RED}❌ Erro ao carregar configuração da instância${NC}"
+        exit 1
+    fi
+    
+    # Configura SSL para backend se for diferente do frontend
+    if [[ "$backend_domain" != "$frontend_domain" ]]; then
+        echo -e "${YELLOW}🔐 Configurando SSL para backend ($backend_domain)...${NC}"
+        create_nginx_config "$stack_name-backend" "$backend_domain" "$BACKEND_PORT" "backend"
+        setup_ssl_certificate "$backend_domain"
+        enable_nginx_site "$stack_name-backend"
+    fi
+    
+    # Configura SSL para frontend
+    echo -e "${YELLOW}🔐 Configurando SSL para frontend ($frontend_domain)...${NC}"
+    create_nginx_config "$stack_name-frontend" "$frontend_domain" "$FRONTEND_PORT" "frontend"
+    setup_ssl_certificate "$frontend_domain"
+    enable_nginx_site "$stack_name-frontend"
+    
+    echo -e "${GREEN}✅ SSL configurado com sucesso!${NC}"
+    echo -e "${YELLOW}🌐 URLs de acesso:${NC}"
+    echo -e "Backend:  ${GREEN}$backend_url${NC}"
+    echo -e "Frontend: ${GREEN}$frontend_url${NC}"
+}
+
+# Função para criar configuração do Nginx
+create_nginx_config() {
+    local stack_name=$1
+    local domain=$2
+    local port=$3
+    local service_type=$4  # "backend" ou "frontend"
+    
+    local nginx_config="/etc/nginx/sites-available/$stack_name"
+    
+    echo -e "${YELLOW}📝 Criando configuração do Nginx para $service_type...${NC}"
+    
+    if [[ "$service_type" == "backend" ]]; then
+        # Configuração específica para backend
+        sudo tee "$nginx_config" > /dev/null << EOF
+# Configuração Nginx para Backend - $stack_name
+# Domínio: $domain
+# Porta: $port
+
+server {
+    listen 80;
+    server_name $domain;
+    
+    # Redireciona HTTP para HTTPS
+    return 301 https://\$server_name\$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name $domain;
+    
+    # Configurações SSL (serão gerenciadas pelo Certbot)
+    ssl_certificate /etc/letsencrypt/live/$domain/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$domain/privkey.pem;
+    
+    # Configurações de segurança SSL
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-RSA-AES256-GCM-SHA512:DHE-RSA-AES256-GCM-SHA512:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+    
+    # Headers de segurança
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Frame-Options DENY always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    
+    # Proxy para o backend
+    location / {
+        proxy_pass http://localhost:$port/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_cache_bypass \$http_upgrade;
+        proxy_read_timeout 86400;
+    }
+    
+    # Configurações para WebSocket
+    location /socket.io/ {
+        proxy_pass http://localhost:$port/socket.io/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+EOF
+    else
+        # Configuração específica para frontend
+        sudo tee "$nginx_config" > /dev/null << EOF
+# Configuração Nginx para Frontend - $stack_name
+# Domínio: $domain
+# Porta: $port
+
+server {
+    listen 80;
+    server_name $domain;
+    
+    # Redireciona HTTP para HTTPS
+    return 301 https://\$server_name\$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name $domain;
+    
+    # Configurações SSL (serão gerenciadas pelo Certbot)
+    ssl_certificate /etc/letsencrypt/live/$domain/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$domain/privkey.pem;
+    
+    # Configurações de segurança SSL
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-RSA-AES256-GCM-SHA512:DHE-RSA-AES256-GCM-SHA512:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+    
+    # Headers de segurança
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Frame-Options DENY always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    
+    # Proxy para o frontend
+    location / {
+        proxy_pass http://localhost:$port/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_cache_bypass \$http_upgrade;
+    }
+    
+    # Configurações para arquivos estáticos
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        proxy_pass http://localhost:$port;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+}
+EOF
+    fi
+    
+    echo -e "${GREEN}✅ Configuração do Nginx criada: $nginx_config${NC}"
+}
+
+# Função para configurar certificado SSL
+setup_ssl_certificate() {
+    local domain=$1
+    
+    echo -e "${YELLOW}🔐 Configurando certificado SSL para $domain...${NC}"
+    
+    # Verifica se o certificado já existe
+    if [[ -d "/etc/letsencrypt/live/$domain" ]]; then
+        echo -e "${YELLOW}⚠️  Certificado já existe para $domain${NC}"
+        echo -e "${YELLOW}💡 Para renovar, use: certbot renew --cert-name $domain${NC}"
+        return 0
+    fi
+    
+    # Para o Nginx temporariamente para liberar porta 80
+    echo -e "${YELLOW}⏸️  Parando Nginx temporariamente...${NC}"
+    sudo systemctl stop nginx
+    
+    # Executa Certbot
+    echo -e "${YELLOW}🎫 Solicitando certificado SSL...${NC}"
+    if sudo certbot certonly --standalone -d "$domain" --non-interactive --agree-tos --register-unsafely-without-email; then
+        echo -e "${GREEN}✅ Certificado SSL obtido com sucesso${NC}"
+    else
+        echo -e "${RED}❌ Erro ao obter certificado SSL${NC}"
+        echo -e "${YELLOW}💡 Verifique se o domínio está apontando para este servidor${NC}"
+        sudo systemctl start nginx
+        exit 1
+    fi
+    
+    # Reinicia Nginx
+    echo -e "${YELLOW}🔄 Reiniciando Nginx...${NC}"
+    sudo systemctl start nginx
+}
+
+# Função para ativar site no Nginx
+enable_nginx_site() {
+    local stack_name=$1
+    
+    echo -e "${YELLOW}🔗 Ativando site no Nginx...${NC}"
+    
+    # Cria link simbólico
+    sudo ln -sf "/etc/nginx/sites-available/$stack_name" "/etc/nginx/sites-enabled/$stack_name"
+    
+    # Testa configuração
+    if sudo nginx -t; then
+        echo -e "${GREEN}✅ Configuração do Nginx válida${NC}"
+        
+        # Recarrega Nginx
+        if sudo systemctl reload nginx; then
+            echo -e "${GREEN}✅ Nginx recarregado com sucesso${NC}"
+        else
+            echo -e "${RED}❌ Erro ao recarregar Nginx${NC}"
+            exit 1
+        fi
+    else
+        echo -e "${RED}❌ Configuração do Nginx inválida${NC}"
+        exit 1
+    fi
+}
+
+# Função para remover SSL de uma instância
+remove_ssl() {
+    local stack_name=$1
+    
+    # Valida se a instância existe
+    validate_instance "$stack_name" "remove-ssl"
+    
+    echo -e "${YELLOW}🗑️  Removendo SSL para $stack_name...${NC}"
+    
+    # Remove configurações de backend e frontend
+    local configs_to_remove=("$stack_name-backend" "$stack_name-frontend")
+    
+    for config in "${configs_to_remove[@]}"; do
+        # Remove link simbólico
+        if [[ -L "/etc/nginx/sites-enabled/$config" ]]; then
+            sudo rm "/etc/nginx/sites-enabled/$config"
+            echo -e "${GREEN}✅ Site $config desativado no Nginx${NC}"
+        fi
+        
+        # Remove configuração
+        if [[ -f "/etc/nginx/sites-available/$config" ]]; then
+            sudo rm "/etc/nginx/sites-available/$config"
+            echo -e "${GREEN}✅ Configuração $config removida${NC}"
+        fi
+    done
+    
+    # Recarrega Nginx
+    if sudo systemctl reload nginx; then
+        echo -e "${GREEN}✅ Nginx recarregado${NC}"
+    fi
+    
+    echo -e "${GREEN}✅ SSL removido com sucesso para $stack_name${NC}"
+}
+
+# Função para renovar certificados SSL
+renew_ssl() {
+    local stack_name=$1
+    
+    if [[ -n "$stack_name" ]]; then
+        # Renova certificado específico
+        validate_instance "$stack_name" "renew-ssl"
+        
+        # Busca domínios nas configurações de backend e frontend
+        local domains=()
+        
+        # Verifica configuração de backend
+        if [[ -f "/etc/nginx/sites-available/$stack_name-backend" ]]; then
+            local backend_domain=$(grep -o "server_name [^;]*" "/etc/nginx/sites-available/$stack_name-backend" | awk '{print $2}')
+            if [[ -n "$backend_domain" ]]; then
+                domains+=("$backend_domain")
+            fi
+        fi
+        
+        # Verifica configuração de frontend
+        if [[ -f "/etc/nginx/sites-available/$stack_name-frontend" ]]; then
+            local frontend_domain=$(grep -o "server_name [^;]*" "/etc/nginx/sites-available/$stack_name-frontend" | awk '{print $2}')
+            if [[ -n "$frontend_domain" ]]; then
+                domains+=("$frontend_domain")
+            fi
+        fi
+        
+        if [[ ${#domains[@]} -gt 0 ]]; then
+            echo -e "${YELLOW}🔄 Renovando certificados para $stack_name...${NC}"
+            for domain in "${domains[@]}"; do
+                echo -e "${YELLOW}  🔄 Renovando certificado para $domain...${NC}"
+                sudo certbot renew --cert-name "$domain"
+            done
+        else
+            echo -e "${RED}❌ Nenhum domínio encontrado para $stack_name${NC}"
+            exit 1
+        fi
+    else
+        # Renova todos os certificados
+        echo -e "${YELLOW}🔄 Renovando todos os certificados SSL...${NC}"
+        sudo certbot renew
+    fi
+    
+    # Recarrega Nginx
+    if sudo systemctl reload nginx; then
+        echo -e "${GREEN}✅ Nginx recarregado${NC}"
+    fi
+    
+    echo -e "${GREEN}✅ Renovação de certificados concluída${NC}"
+}
+
+# Função para listar configurações SSL
+list_ssl() {
+    echo -e "${YELLOW}📋 Configurações SSL ativas:${NC}\n"
+    
+    if [[ -d "/etc/nginx/sites-enabled" ]]; then
+        local sites_enabled=$(ls /etc/nginx/sites-enabled/ 2>/dev/null)
+        if [[ -n "$sites_enabled" ]]; then
+            # Agrupa por stack name
+            declare -A stack_configs
+            
+            for site in $sites_enabled; do
+                local config_file="/etc/nginx/sites-available/$site"
+                if [[ -f "$config_file" ]]; then
+                    local domain=$(grep -o "server_name [^;]*" "$config_file" | awk '{print $2}')
+                    local service_type=""
+                    
+                    # Determina o tipo de serviço baseado no nome do arquivo
+                    if [[ "$site" == *"-backend" ]]; then
+                        service_type="Backend"
+                        local stack_name="${site%-backend}"
+                    elif [[ "$site" == *"-frontend" ]]; then
+                        service_type="Frontend"
+                        local stack_name="${site%-frontend}"
+                    else
+                        service_type="Geral"
+                        local stack_name="$site"
+                    fi
+                    
+                    if [[ -n "$domain" ]]; then
+                        if [[ -z "${stack_configs[$stack_name]}" ]]; then
+                            stack_configs[$stack_name]=""
+                        fi
+                        stack_configs[$stack_name]+="$service_type:$domain:$config_file;"
+                    fi
+                fi
+            done
+            
+            # Exibe as configurações agrupadas
+            for stack_name in "${!stack_configs[@]}"; do
+                echo -e "Stack: ${GREEN}$stack_name${NC}"
+                
+                IFS=';' read -ra configs <<< "${stack_configs[$stack_name]}"
+                for config in "${configs[@]}"; do
+                    if [[ -n "$config" ]]; then
+                        IFS=':' read -ra parts <<< "$config"
+                        local service_type="${parts[0]}"
+                        local domain="${parts[1]}"
+                        local config_file="${parts[2]}"
+                        
+                        echo -e "  $service_type: ${GREEN}$domain${NC}"
+                        echo -e "    Configuração: ${GREEN}$config_file${NC}"
+                        
+                        # Verifica certificado
+                        if [[ -d "/etc/letsencrypt/live/$domain" ]]; then
+                            local cert_expiry=$(sudo certbot certificates --cert-name "$domain" 2>/dev/null | grep "VALID" | awk '{print $2}')
+                            echo -e "    Certificado: ${GREEN}Válido até $cert_expiry${NC}"
+                        else
+                            echo -e "    Certificado: ${RED}Não encontrado${NC}"
+                        fi
+                    fi
+                done
+                echo ""
+            done
+        else
+            echo -e "${YELLOW}Nenhuma configuração SSL ativa encontrada${NC}"
+        fi
+    else
+        echo -e "${YELLOW}Diretório de sites habilitados não encontrado${NC}"
+    fi
+}
+
 # Verifica se foi fornecido um comando
 if [[ $# -eq 0 ]]; then
     show_help
@@ -1119,6 +1983,24 @@ case "$1" in
         shift  # Remove o comando "restart" dos argumentos
         parse_args "$@"
         restart_stack
+        ;;
+    "ssl")
+        shift  # Remove o comando "ssl" dos argumentos
+        parse_args "$@"
+        setup_ssl "$STACK_NAME" "$BACKEND_URL" "$FRONTEND_URL"
+        ;;
+    "remove-ssl")
+        shift  # Remove o comando "remove-ssl" dos argumentos
+        parse_args "$@"
+        remove_ssl "$STACK_NAME"
+        ;;
+    "renew-ssl")
+        shift  # Remove o comando "renew-ssl" dos argumentos
+        parse_args "$@"
+        renew_ssl "$STACK_NAME"
+        ;;
+    "list-ssl")
+        list_ssl
         ;;
     -h|--help)
         show_help
