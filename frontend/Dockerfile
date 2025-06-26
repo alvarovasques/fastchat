@@ -7,8 +7,9 @@ RUN npm install -g serve
 
 COPY frontend/package*.json ./
 COPY frontend/yarn.lock ./
+COPY frontend/node_modules ./node_modules
 
-RUN yarn install
+# RUN yarn install
 
 COPY frontend/ .
 
@@ -33,7 +34,8 @@ RUN ./copy_brand_assets.sh
 RUN rm -rf ./brands
 
 # Build the application
-RUN yarn build
+# RUN yarn build
+COPY frontend/build ./build
 
 EXPOSE 3001
 

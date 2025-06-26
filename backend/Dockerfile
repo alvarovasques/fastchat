@@ -10,11 +10,12 @@ RUN rm -f package-lock.json
 
 COPY backend/package*.json ./
 COPY backend/yarn.lock ./
+COPY backend/node_modules ./node_modules
 
 # Configure git to use HTTPS instead of SSH
 RUN git config --global url."https://".insteadOf ssh://
 
-RUN yarn install
+# RUN yarn install
 
 COPY backend/ .
 
@@ -30,7 +31,8 @@ RUN ./copy_cert_assets.sh
 
 RUN rm -rf ./certs-temp
 
-RUN yarn build
+# RUN yarn build
+COPY backend/build ./build
 
 EXPOSE 3000
 
