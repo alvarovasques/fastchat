@@ -1,6 +1,7 @@
 import * as Yup from "yup";
 import { Request, Response } from "express";
 import { getIO } from "../libs/socket";
+import { processChatUpload, getFileInfo } from "../middleware/upload";
 
 import CreateService from "../services/ChatService/CreateService";
 import ListService from "../services/ChatService/ListService";
@@ -8,9 +9,9 @@ import ShowFromUuidService from "../services/ChatService/ShowFromUuidService";
 import DeleteService from "../services/ChatService/DeleteService";
 import FindMessages from "../services/ChatService/FindMessages";
 import UpdateService from "../services/ChatService/UpdateService";
+import CreateMessageService, { setTypingStatus, getTypingUsers } from "../services/ChatService/CreateMessageService";
 
 import Chat from "../models/Chat";
-import CreateMessageService from "../services/ChatService/CreateMessageService";
 import User from "../models/User";
 import ChatUser from "../models/ChatUser";
 
@@ -58,7 +59,18 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   record.users.forEach(user => {
     io.to(`user-${user.userId}`).emit(`company-${companyId}-chat-user-${user.userId}`, {
       action: "create",
-      record
+      record,
+      timestamp: new Date()
+    });
+    
+    // Enviar notificação push
+    io.to(`user-${user.userId}`).emit('notification', {
+      type: 'chat-created',
+      title: 'Novo chat criado',
+      message: `Chat "${record.title}" foi criado`,
+      chatId: record.id,
+      timestamp: new Date(),
+      sound: true
     });
   });
 
@@ -83,7 +95,8 @@ export const update = async (
   record.users.forEach(user => {
     io.to(`user-${user.userId}`).emit(`company-${companyId}-chat-user-${user.userId}`, {
       action: "update",
-      record
+      record,
+      timestamp: new Date()
     });
   });
 
@@ -110,49 +123,124 @@ export const remove = async (
   const io = getIO();
   io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-chat`, {
     action: "delete",
-    id
+    id,
+    timestamp: new Date()
   });
 
   return res.status(200).json({ message: "Chat deleted" });
 };
 
+// NOVO: Salvar mensagem com suporte a arquivos
 export const saveMessage = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
-  const { companyId } = req.user;
-  const { message } = req.body;
-  const { id } = req.params;
-  const senderId = +req.user.id;
-  const chatId = +id;
+  try {
+    const { companyId } = req.user;
+    const { message } = req.body;
+    const { id } = req.params;
+    const senderId = +req.user.id;
+    const chatId = +id;
 
-  const newMessage = await CreateMessageService({
-    chatId,
-    senderId,
-    message
-  });
+    let newMessage;
+    
+    // Verificar se há arquivos no upload
+    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+    
+    if (files && (files.files || files.image || files.audio)) {
+      // Processar cada arquivo enviado
+      const uploadedFiles = files.files || files.image || files.audio || [];
+      const messagePromises = [];
 
-  const chat = await Chat.findByPk(chatId, {
-    include: [
-      { model: User, as: "owner" },
-      { model: ChatUser, as: "users" }
-    ]
-  });
+      for (const file of uploadedFiles) {
+        const fileInfo = getFileInfo(file, companyId.toString());
+        
+        const messageData = {
+          chatId,
+          senderId,
+          message: message || '',
+          mediaPath: fileInfo.mediaPath,
+          mediaName: fileInfo.mediaName,
+          messageType: fileInfo.fileType as any,
+          fileInfo
+        };
 
-  const io = getIO();
-  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-chat-${chatId}`, {
-    action: "new-message",
-    newMessage,
-    chat
-  });
+        messagePromises.push(CreateMessageService(messageData));
+      }
 
-  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-chat`, {
-    action: "new-message",
-    newMessage,
-    chat
-  });
+      // Aguardar todas as mensagens serem criadas
+      const createdMessages = await Promise.all(messagePromises);
+      newMessage = createdMessages[0]; // Usar a primeira para compatibilidade
+      
+      // Se há múltiplos arquivos, criar mensagem agrupada
+      if (createdMessages.length > 1) {
+        newMessage.multipleFiles = createdMessages;
+      }
+      
+    } else {
+      // Mensagem de texto simples
+      newMessage = await CreateMessageService({
+        chatId,
+        senderId,
+        message: message || ''
+      });
+    }
 
-  return res.json(newMessage);
+    // Buscar chat atualizado
+    const chat = await Chat.findByPk(chatId, {
+      include: [
+        { model: User, as: "owner" },
+        { 
+          model: ChatUser, 
+          as: "users",
+          include: [{ model: User, as: "user" }]
+        }
+      ]
+    });
+
+    const io = getIO();
+    
+    // Emitir para o canal específico do chat
+    io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-chat-${chatId}`, {
+      action: "new-message",
+      newMessage,
+      chat,
+      timestamp: new Date()
+    });
+
+    // Emitir para o canal geral de chats (lista de chats)
+    io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-chat`, {
+      action: "new-message",
+      newMessage,
+      chat,
+      timestamp: new Date()
+    });
+
+    // Enviar notificações para usuários específicos
+    const sender = await User.findByPk(senderId);
+    chat.users.forEach(chatUser => {
+      if (chatUser.userId !== senderId) {
+        io.to(`user-${chatUser.userId}`).emit('notification', {
+          type: 'new-message',
+          title: `${sender.name} - ${chat.title}`,
+          message: newMessage.message,
+          chatId: chat.id,
+          senderId,
+          senderName: sender.name,
+          hasFile: !!newMessage.mediaPath,
+          timestamp: new Date(),
+          sound: true,
+          desktop: true
+        });
+      }
+    });
+
+    return res.json(newMessage);
+    
+  } catch (error) {
+    console.error("Erro ao salvar mensagem:", error);
+    return res.status(500).json({ error: "Erro interno do servidor" });
+  }
 };
 
 export const checkAsRead = async (
@@ -164,24 +252,37 @@ export const checkAsRead = async (
   const { id } = req.params;
 
   const chatUser = await ChatUser.findOne({ where: { chatId: id, userId } });
-  await chatUser.update({ unreads: 0 });
+  await chatUser.update({ 
+    unreads: 0,
+    hasNewMessage: false,
+    lastSeenAt: new Date()
+  });
 
   const chat = await Chat.findByPk(id, {
     include: [
       { model: User, as: "owner" },
-      { model: ChatUser, as: "users" }
+      { 
+        model: ChatUser, 
+        as: "users",
+        include: [{ model: User, as: "user" }]
+      }
     ]
   });
 
   const io = getIO();
+  
+  // Emitir status de leitura
   io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-chat-${id}`, {
-    action: "update",
-    chat
+    action: "message-read",
+    chat,
+    userId,
+    timestamp: new Date()
   });
 
   io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-chat`, {
     action: "update",
-    chat
+    chat,
+    timestamp: new Date()
   });
 
   return res.json(chat);
@@ -202,4 +303,71 @@ export const messages = async (
   });
 
   return res.json({ records, count, hasMore });
+};
+
+// NOVO: Gerenciar status de "digitando"
+export const setTyping = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
+  const { companyId } = req.user;
+  const { isTyping } = req.body;
+  const { id: chatId } = req.params;
+  const userId = +req.user.id;
+
+  await setTypingStatus(+chatId, userId, isTyping);
+
+  const io = getIO();
+  const user = await User.findByPk(userId, {
+    attributes: ["id", "name"]
+  });
+
+  // Emitir status de digitação
+  io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-chat-${chatId}`, {
+    action: isTyping ? "user-typing" : "user-stopped-typing",
+    user,
+    chatId,
+    timestamp: new Date()
+  });
+
+  return res.json({ success: true });
+};
+
+// NOVO: Buscar usuários digitando
+export const getTyping = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
+  const { id: chatId } = req.params;
+  const userId = +req.user.id;
+
+  const typingUsers = await getTypingUsers(+chatId, userId);
+
+  return res.json(typingUsers);
+};
+
+// NOVO: Upload direto de arquivo
+export const uploadFile = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
+  try {
+    const { companyId } = req.user;
+    
+    if (!req.file) {
+      return res.status(400).json({ error: "Nenhum arquivo enviado" });
+    }
+
+    const fileInfo = getFileInfo(req.file, companyId.toString());
+
+    return res.json({
+      success: true,
+      file: {
+        ...fileInfo,
+        downloadUrl: `/public/${fileInfo.mediaPath}`
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ error: "Erro ao fazer upload" });
+  }
 };
