@@ -47,7 +47,6 @@ export default async function CreateMessageService({
         displayMessage = message || '🎬 Vídeo';
         break;
       case 'document':
-      case 'pdf':
         displayMessage = message || `📄 ${mediaName}`;
         break;
       default:

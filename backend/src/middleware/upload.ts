@@ -51,7 +51,7 @@ const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilt
   if (ALLOWED_TYPES[file.mimetype]) {
     cb(null, true);
   } else {
-    cb(new AppError(`Tipo de arquivo não permitido: ${file.mimetype}`, 400));
+    cb(new Error(`Tipo de arquivo não permitido: ${file.mimetype}`));
   }
 };
 
